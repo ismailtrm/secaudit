@@ -67,9 +67,15 @@ func runHeadless(ctx context.Context, domain0 string) error {
 	}
 
 	started := time.Now()
+	opts := engine.Options{}
+	if mode == checker.Active {
+		opts.CheckerTimeout = 15 * time.Minute
+	}
 	var results []checker.Result
-	for res := range engine.Run(ctx, t, checkers, engine.Options{}) {
-		results = append(results, res)
+	for ev := range engine.Run(ctx, t, checkers, opts) {
+		if ev.Result != nil {
+			results = append(results, *ev.Result)
+		}
 	}
 	rep := report.Build(t, results, started)
 	fmt.Println(rep.Text())

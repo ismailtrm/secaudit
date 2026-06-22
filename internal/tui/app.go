@@ -30,6 +30,15 @@ type appModel struct {
 	width, height int
 }
 
+// optsFor gives active scans a long per-checker budget (nuclei/nmap run for
+// minutes); passive scans keep the default short timeout.
+func optsFor(mode checker.Mode) engine.Options {
+	if mode == checker.Active {
+		return engine.Options{CheckerTimeout: 15 * time.Minute}
+	}
+	return engine.Options{}
+}
+
 func newApp(ctx context.Context, domain0, ownership0, mode0 string, write WriteFunc) appModel {
 	return appModel{
 		launcher: newLauncher(domain0, ownership0, mode0),
@@ -58,7 +67,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case launchMsg:
 		checkers := checker.ByMode(msg.mode)
-		ch := engine.Run(m.ctx, msg.target, checkers, engine.Options{})
+		ch := engine.Run(m.ctx, msg.target, checkers, optsFor(msg.mode))
 		m.scan = newScanModel(msg.target, checkers, ch, time.Now(), m.write)
 		// Seed the scan model with the current terminal size so its table lays out.
 		if m.width > 0 {

@@ -59,6 +59,7 @@ const (
 	CatWhois Category = "WHOIS"
 	CatOSINT Category = "OSINT"
 	CatPort  Category = "PORT"
+	CatVuln  Category = "VULN"
 )
 
 // Checker is the plugin contract. Implementations must be safe for concurrent
@@ -77,4 +78,18 @@ type Checker interface {
 	// many: missing DMARC, weak SPF, ...). A returned error is a hard failure;
 	// per-finding soft failures go in Finding.Err.
 	Run(ctx context.Context, t Target) ([]Finding, error)
+}
+
+// Emitter receives a finding the moment a checker discovers it.
+type Emitter func(Finding)
+
+// StreamingChecker is an optional capability: long-running checkers (active
+// scanners) call emit() for each finding as it is found, so the UI can show
+// results live instead of waiting for the whole scan. The engine prefers
+// RunStream when a checker implements it; the returned slice still feeds the
+// final report. Implementations typically have Run delegate to RunStream with a
+// no-op emit.
+type StreamingChecker interface {
+	Checker
+	RunStream(ctx context.Context, t Target, emit Emitter) ([]Finding, error)
 }

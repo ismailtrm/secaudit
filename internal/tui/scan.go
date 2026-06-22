@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/ismailtrm/secaudit/internal/checker"
+	"github.com/ismailtrm/secaudit/internal/engine"
 	"github.com/ismailtrm/secaudit/internal/report"
 )
 
@@ -15,6 +16,7 @@ import (
 type WriteFunc func(report.Report) (string, error)
 
 type resultMsg checker.Result
+type findingMsg checker.Finding
 type scanDoneMsg struct{}
 
 // feedItem is one entry in the live scanning feed.
@@ -25,21 +27,25 @@ type feedItem struct {
 	title   string
 }
 
-// waitForResult blocks on one Result and re-arms itself until the channel closes.
-func waitForResult(ch <-chan checker.Result) tea.Cmd {
+// waitForEvent blocks on one engine Event and re-arms itself until the channel
+// closes: a streamed finding, a completed checker, or end-of-scan.
+func waitForEvent(ch <-chan engine.Event) tea.Cmd {
 	return func() tea.Msg {
-		r, ok := <-ch
+		ev, ok := <-ch
 		if !ok {
 			return scanDoneMsg{}
 		}
-		return resultMsg(r)
+		if ev.Finding != nil {
+			return findingMsg(*ev.Finding)
+		}
+		return resultMsg(*ev.Result)
 	}
 }
 
 type scanModel struct {
 	target   checker.Target
 	checkers []checker.Checker
-	ch       <-chan checker.Result
+	ch       <-chan engine.Event
 	started  time.Time
 	write    WriteFunc
 
@@ -67,7 +73,7 @@ type scanModel struct {
 	status        string
 }
 
-func newScanModel(t checker.Target, checkers []checker.Checker, ch <-chan checker.Result, started time.Time, write WriteFunc) scanModel {
+func newScanModel(t checker.Target, checkers []checker.Checker, ch <-chan engine.Event, started time.Time, write WriteFunc) scanModel {
 	totalCat := map[checker.Category]int{}
 	pending := map[string]string{}
 	for _, c := range checkers {
@@ -75,7 +81,7 @@ func newScanModel(t checker.Target, checkers []checker.Checker, ch <-chan checke
 		pending[c.ID()] = c.Name()
 	}
 	pref := []checker.Category{checker.CatDNS, checker.CatEmail, checker.CatTLS,
-		checker.CatHTTP, checker.CatWhois, checker.CatOSINT, checker.CatPort}
+		checker.CatHTTP, checker.CatWhois, checker.CatOSINT, checker.CatPort, checker.CatVuln}
 	var catOrder []checker.Category
 	for _, cat := range pref {
 		if totalCat[cat] > 0 {
@@ -93,7 +99,7 @@ func newScanModel(t checker.Target, checkers []checker.Checker, ch <-chan checke
 }
 
 func (m scanModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, waitForResult(m.ch))
+	return tea.Batch(m.spinner.Tick, waitForEvent(m.ch))
 }
 
 func (m scanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -111,20 +117,28 @@ func (m scanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
+	case findingMsg:
+		f := checker.Finding(msg)
+		m.feed = append(m.feed, feedItem{elapsed: time.Since(m.started), cat: f.Category, sev: f.Severity, title: f.Title})
+		return m, waitForEvent(m.ch)
+
 	case resultMsg:
 		r := checker.Result(msg)
 		m.results = append(m.results, r)
 		m.receivedCat[r.Category]++
 		delete(m.pending, r.CheckerID)
 		now := time.Since(m.started)
-		for _, f := range r.Findings {
-			m.feed = append(m.feed, feedItem{elapsed: now, cat: f.Category, sev: f.Severity, title: f.Title})
+		// Streaming checkers already pushed their findings live via findingMsg.
+		if !r.Streamed {
+			for _, f := range r.Findings {
+				m.feed = append(m.feed, feedItem{elapsed: now, cat: f.Category, sev: f.Severity, title: f.Title})
+			}
 		}
 		if r.Skipped {
 			m.feed = append(m.feed, feedItem{elapsed: now, cat: r.Category, sev: checker.SevInfo,
 				title: r.Name + " skipped — " + r.Reason})
 		}
-		return m, waitForResult(m.ch)
+		return m, waitForEvent(m.ch)
 
 	case scanDoneMsg:
 		m.done = true

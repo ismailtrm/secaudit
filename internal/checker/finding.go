@@ -55,4 +55,5 @@ type Result struct {
 	Reason    string        `json:"reason,omitempty"` // why skipped ("nmap not installed")
 	Err       string        `json:"error,omitempty"`  // checker-wide failure
 	Elapsed   time.Duration `json:"elapsed_ns"`
+	Streamed  bool          `json:"-"` // findings were emitted live (don't re-add to feed)
 }

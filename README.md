@@ -66,6 +66,24 @@ Reports are written as `report-<domain>-<timestamp>.{md,json}`.
 crt.sh and Wayback results are cached in a small SQLite TTL store
 (`~/.config/secaudit/cache.db`) so repeated scans don't re-hit flaky services.
 
+## Checkers (active — own/authorized targets only)
+
+Active checkers probe the target directly and only run with `--mode active`,
+which the guardrail permits solely for `own`/`authorized` ownership. They shell
+out to installed binaries and skip gracefully if a binary is missing. Findings
+**stream into the live feed as they're discovered** (nuclei especially).
+
+| Checker | What it does | Binary |
+|---|---|---|
+| `active.nmap` | top-1000 TCP port/service scan; flags risky exposed services (DB, telnet, Docker API, …) | `nmap` |
+| `active.nuclei` | ProjectDiscovery template scan (low+ severity), streamed live | `nuclei` |
+| `active.httpx` | alive-probe of the apex + discovered subdomains (cached crt.sh + wordlist) with tech detection | `httpx` |
+
+```sh
+secaudit example.com --mode active --ownership own   # headless active scan
+# or pick "active" + "own" in the launcher's bottom bar
+```
+
 Adding a checker is one file: implement `checker.Checker` and call
 `checker.Register` from an `init()`. The engine and TUI discover it automatically.
 
