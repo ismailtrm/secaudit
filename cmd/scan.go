@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -14,6 +15,7 @@ import (
 	"github.com/ismailtrm/secaudit/internal/engine"
 	"github.com/ismailtrm/secaudit/internal/guard"
 	"github.com/ismailtrm/secaudit/internal/report"
+	"github.com/ismailtrm/secaudit/internal/tui"
 )
 
 var (
@@ -25,10 +27,12 @@ var (
 )
 
 var scanCmd = &cobra.Command{
-	Use:   "scan <domain>",
+	Use:   "scan [domain]",
 	Short: "Scan a domain and produce a report",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runScan,
+	Long: "Scan a domain with passive recon checks. With no --no-tui flag it opens " +
+		"an interactive wizard and live TUI; the domain argument is optional there.",
+	Args: cobra.MaximumNArgs(1),
+	RunE: runScan,
 }
 
 func init() {
@@ -41,6 +45,25 @@ func init() {
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
+	var domain0 string
+	if len(args) == 1 {
+		domain0 = args[0]
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	if flagNoTUI {
+		return runHeadlessCmd(ctx, domain0)
+	}
+	return runTUICmd(ctx, domain0)
+}
+
+// runHeadlessCmd resolves parameters from flags (no interactive prompt).
+func runHeadlessCmd(ctx context.Context, domain0 string) error {
+	if strings.TrimSpace(domain0) == "" {
+		return fmt.Errorf("a domain argument is required with --no-tui")
+	}
 	owner, err := guard.ParseOwnership(flagOwnership)
 	if err != nil {
 		return err
@@ -49,29 +72,18 @@ func runScan(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	// Guardrail enforced here too, not only in the (future) wizard.
 	if err := guard.Authorize(owner, mode); err != nil {
 		return err
 	}
-
-	t, err := checker.NewTarget(args[0], owner)
+	t, err := checker.NewTarget(domain0, owner)
 	if err != nil {
 		return err
 	}
-
 	checkers := checker.ByMode(mode)
 	if len(checkers) == 0 {
 		return fmt.Errorf("no checkers registered for mode %s", mode)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
-	// TUI is the default once implemented; until then everything is headless.
-	return runHeadless(ctx, t, checkers)
-}
-
-func runHeadless(ctx context.Context, t checker.Target, checkers []checker.Checker) error {
 	started := time.Now()
 	var results []checker.Result
 	for res := range engine.Run(ctx, t, checkers, engine.Options{}) {
@@ -79,31 +91,67 @@ func runHeadless(ctx context.Context, t checker.Target, checkers []checker.Check
 	}
 	rep := report.Build(t, results, started)
 	fmt.Println(rep.Text())
-	return writeReports(rep, t)
+	paths, err := writeReportFiles(rep, t)
+	for _, p := range paths {
+		fmt.Println("wrote", p)
+	}
+	return err
 }
 
-func writeReports(rep report.Report, t checker.Target) error {
+// runTUICmd opens the wizard, then the live scan TUI.
+func runTUICmd(ctx context.Context, domain0 string) error {
+	wiz, err := tui.RunWizard(ctx, domain0, flagOwnership, flagMode)
+	if err != nil {
+		return err
+	}
+	t, err := checker.NewTarget(wiz.Domain, wiz.Ownership)
+	if err != nil {
+		return err
+	}
+	checkers := checker.ByMode(wiz.Mode)
+	if len(checkers) == 0 {
+		return fmt.Errorf("no checkers registered for mode %s", wiz.Mode)
+	}
+	write := func(rep report.Report) (string, error) {
+		paths, err := writeReportFiles(rep, t)
+		if err != nil {
+			return "", err
+		}
+		if len(paths) == 0 {
+			return "nothing written (--format none)", nil
+		}
+		return "wrote " + strings.Join(paths, ", "), nil
+	}
+	return tui.RunScan(ctx, t, checkers, write)
+}
+
+// writeReportFiles writes the report to disk per --format/--out and returns the
+// paths written.
+func writeReportFiles(rep report.Report, t checker.Target) ([]string, error) {
 	if flagFormat == "none" {
-		return nil
+		return nil, nil
 	}
 	ts := rep.StartedAt.Format("20060102-150405")
 	base := filepath.Join(flagOutDir, fmt.Sprintf("report-%s-%s", t.Domain, ts))
 
+	var paths []string
 	if flagFormat == "both" || flagFormat == "md" {
-		if err := os.WriteFile(base+".md", []byte(rep.Markdown()), 0o644); err != nil {
-			return err
+		p := base + ".md"
+		if err := os.WriteFile(p, []byte(rep.Markdown()), 0o644); err != nil {
+			return paths, err
 		}
-		fmt.Println("wrote", base+".md")
+		paths = append(paths, p)
 	}
 	if flagFormat == "both" || flagFormat == "json" {
+		p := base + ".json"
 		j, err := rep.JSON()
 		if err != nil {
-			return err
+			return paths, err
 		}
-		if err := os.WriteFile(base+".json", j, 0o644); err != nil {
-			return err
+		if err := os.WriteFile(p, j, 0o644); err != nil {
+			return paths, err
 		}
-		fmt.Println("wrote", base+".json")
+		paths = append(paths, p)
 	}
-	return nil
+	return paths, nil
 }
