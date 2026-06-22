@@ -59,7 +59,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case launchMsg:
 		checkers := checker.ByMode(msg.mode)
 		ch := engine.Run(m.ctx, msg.target, checkers, engine.Options{})
-		m.scan = newScanModel(msg.target, len(checkers), ch, time.Now(), m.write)
+		m.scan = newScanModel(msg.target, checkers, ch, time.Now(), m.write)
 		// Seed the scan model with the current terminal size so its table lays out.
 		if m.width > 0 {
 			sm, _ := m.scan.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})

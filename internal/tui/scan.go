@@ -1,26 +1,29 @@
 package tui
 
 import (
-	"fmt"
-	"strings"
+	"sort"
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
-	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/ismailtrm/secaudit/internal/checker"
 	"github.com/ismailtrm/secaudit/internal/report"
 )
 
-// WriteFunc persists a finished report and returns a one-line description of
-// what was written (or an error). Supplied by the caller so tui needn't know
-// about output paths/flags.
+// WriteFunc persists a finished report and returns a one-line status (or error).
 type WriteFunc func(report.Report) (string, error)
 
 type resultMsg checker.Result
 type scanDoneMsg struct{}
+
+// feedItem is one entry in the live scanning feed.
+type feedItem struct {
+	elapsed time.Duration
+	cat     checker.Category
+	sev     checker.Severity
+	title   string
+}
 
 // waitForResult blocks on one Result and re-arms itself until the channel closes.
 func waitForResult(ch <-chan checker.Result) tea.Cmd {
@@ -34,24 +37,59 @@ func waitForResult(ch <-chan checker.Result) tea.Cmd {
 }
 
 type scanModel struct {
-	target  checker.Target
-	total   int
-	ch      <-chan checker.Result
-	started time.Time
-	write   WriteFunc
+	target   checker.Target
+	checkers []checker.Checker
+	ch       <-chan checker.Result
+	started  time.Time
+	write    WriteFunc
 
 	spinner spinner.Model
 	results []checker.Result
-	done    bool
-	rep     report.Report
-	table   table.Model
-	status  string
+
+	// scanning screen
+	totalCat    map[checker.Category]int
+	receivedCat map[checker.Category]int
+	catOrder    []checker.Category
+	pending     map[string]string // checkerID → name, still running
+	feed        []feedItem
+
+	// results screen
+	done      bool
+	rep       report.Report
+	findings  []checker.Finding // filtered + sorted view
+	cursor    int
+	scroll    int
+	minSev    checker.Severity
+	sortByCat bool
+	listH     int
 
 	width, height int
+	status        string
 }
 
-func newScanModel(t checker.Target, total int, ch <-chan checker.Result, started time.Time, write WriteFunc) scanModel {
-	return scanModel{target: t, total: total, ch: ch, started: started, write: write, spinner: spinner.New()}
+func newScanModel(t checker.Target, checkers []checker.Checker, ch <-chan checker.Result, started time.Time, write WriteFunc) scanModel {
+	totalCat := map[checker.Category]int{}
+	pending := map[string]string{}
+	for _, c := range checkers {
+		totalCat[c.Category()]++
+		pending[c.ID()] = c.Name()
+	}
+	pref := []checker.Category{checker.CatDNS, checker.CatEmail, checker.CatTLS,
+		checker.CatHTTP, checker.CatWhois, checker.CatOSINT, checker.CatPort}
+	var catOrder []checker.Category
+	for _, cat := range pref {
+		if totalCat[cat] > 0 {
+			catOrder = append(catOrder, cat)
+		}
+	}
+	return scanModel{
+		target: t, checkers: checkers, ch: ch, started: started, write: write,
+		spinner:     spinner.New(),
+		totalCat:    totalCat,
+		receivedCat: map[checker.Category]int{},
+		catOrder:    catOrder,
+		pending:     pending,
+	}
 }
 
 func (m scanModel) Init() tea.Cmd {
@@ -62,8 +100,9 @@ func (m scanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		if m.done {
-			m.table.UpdateViewport()
+		m.listH = m.height - 7 // header(4) + footer(1) + box borders(2)
+		if m.listH < 1 {
+			m.listH = 1
 		}
 		return m, nil
 
@@ -73,13 +112,24 @@ func (m scanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case resultMsg:
-		m.results = append(m.results, checker.Result(msg))
+		r := checker.Result(msg)
+		m.results = append(m.results, r)
+		m.receivedCat[r.Category]++
+		delete(m.pending, r.CheckerID)
+		now := time.Since(m.started)
+		for _, f := range r.Findings {
+			m.feed = append(m.feed, feedItem{elapsed: now, cat: f.Category, sev: f.Severity, title: f.Title})
+		}
+		if r.Skipped {
+			m.feed = append(m.feed, feedItem{elapsed: now, cat: r.Category, sev: checker.SevInfo,
+				title: r.Name + " skipped — " + r.Reason})
+		}
 		return m, waitForResult(m.ch)
 
 	case scanDoneMsg:
 		m.done = true
 		m.rep = report.Build(m.target, m.results, m.started)
-		m.table = m.buildTable()
+		m.applyFilterSort()
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -88,27 +138,90 @@ func (m scanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if m.done {
-			if msg.String() == "w" {
-				if m.write != nil {
-					s, err := m.write(m.rep)
-					if err != nil {
-						m.status = "write error: " + err.Error()
-					} else {
-						m.status = s
-					}
-				}
-				return m, nil
-			}
-			var cmd tea.Cmd
-			m.table, cmd = m.table.Update(msg)
-			return m, cmd
+			return m.handleResultsKey(msg.String()), nil
 		}
 	}
 	return m, nil
 }
 
-// render returns the screen content (used by the parent app model, which wraps
-// it in a full-screen View).
+func (m scanModel) handleResultsKey(key string) scanModel {
+	switch key {
+	case "up", "k":
+		m.moveCursor(-1)
+	case "down", "j":
+		m.moveCursor(1)
+	case "g", "home":
+		m.cursor, m.scroll = 0, 0
+	case "f":
+		m.minSev = (m.minSev + 1) % 4 // info → low → medium → high → info
+		m.applyFilterSort()
+	case "s":
+		m.sortByCat = !m.sortByCat
+		m.applyFilterSort()
+	case "w":
+		if m.write != nil {
+			if s, err := m.write(m.rep); err != nil {
+				m.status = "write error: " + err.Error()
+			} else {
+				m.status = s
+			}
+		}
+	}
+	return m
+}
+
+func (m *scanModel) moveCursor(d int) {
+	m.cursor = clampi(m.cursor+d, 0, max(len(m.findings)-1, 0))
+	if m.cursor < m.scroll {
+		m.scroll = m.cursor
+	}
+	if m.listH > 0 && m.cursor >= m.scroll+m.listH {
+		m.scroll = m.cursor - m.listH + 1
+	}
+}
+
+// applyFilterSort rebuilds the visible findings slice from the report.
+func (m *scanModel) applyFilterSort() {
+	var fs []checker.Finding
+	for _, f := range m.rep.Findings {
+		if f.Severity >= m.minSev {
+			fs = append(fs, f)
+		}
+	}
+	sort.SliceStable(fs, func(i, j int) bool {
+		a, b := fs[i], fs[j]
+		if m.sortByCat {
+			if a.Category != b.Category {
+				return a.Category < b.Category
+			}
+			return a.Severity > b.Severity
+		}
+		if a.Severity != b.Severity {
+			return a.Severity > b.Severity
+		}
+		return a.Category < b.Category
+	})
+	m.findings = fs
+	m.cursor = clampi(m.cursor, 0, max(len(fs)-1, 0))
+	if m.cursor < m.scroll {
+		m.scroll = m.cursor
+	}
+	if m.listH > 0 && m.cursor >= m.scroll+m.listH {
+		m.scroll = m.cursor - m.listH + 1
+	}
+}
+
+// liveCounts tallies severities seen so far during scanning.
+func (m scanModel) liveCounts() map[checker.Severity]int {
+	c := map[checker.Severity]int{}
+	for _, r := range m.results {
+		for _, f := range r.Findings {
+			c[f.Severity]++
+		}
+	}
+	return c
+}
+
 func (m scanModel) render() string {
 	if m.done {
 		return m.resultsView()
@@ -117,113 +230,3 @@ func (m scanModel) render() string {
 }
 
 func (m scanModel) View() tea.View { return tea.NewView(m.render()) }
-
-func (m scanModel) buildTable() table.Model {
-	cols := []table.Column{
-		{Title: "SEV", Width: 9},
-		{Title: "CATEGORY", Width: 10},
-		{Title: "TITLE", Width: 44},
-	}
-	rows := make([]table.Row, 0, len(m.rep.Findings))
-	for _, f := range m.rep.Findings {
-		rows = append(rows, table.Row{f.Severity.String(), string(f.Category), f.Title})
-	}
-	t := table.New(table.WithColumns(cols), table.WithRows(rows))
-	t.Focus()
-	t.SetWidth(9 + 10 + 46 + 6) // sum of column widths + cell padding
-	h := len(rows) + 1
-	if h > 15 {
-		h = 15
-	}
-	t.SetHeight(h)
-	t.UpdateViewport() // commit rows into the table's internal viewport
-	return t
-}
-
-func (m scanModel) runningView() string {
-	var b strings.Builder
-	b.WriteString(header(m.target) + "\n\n")
-	fmt.Fprintf(&b, "%s scanning… %d/%d checks complete\n\n", m.spinner.View(), len(m.results), m.total)
-	for _, r := range m.results {
-		var icon, detail string
-		switch {
-		case r.Skipped:
-			icon = faintStyle.Render("⊘")
-			detail = faintStyle.Render("skipped: " + r.Reason)
-		case r.Err != "":
-			icon = sevStyle(checker.SevHigh).Render("✗")
-			detail = sevStyle(checker.SevHigh).Render(r.Err)
-		default:
-			icon = okStyle.Render("✓")
-			detail = faintStyle.Render(fmt.Sprintf("%d findings · %s", len(r.Findings), r.Elapsed.Round(time.Millisecond)))
-		}
-		fmt.Fprintf(&b, "  %s %-24s %s\n", icon, r.Name, detail)
-	}
-	b.WriteString("\n" + hintStyle.Render("[q] quit"))
-	return b.String()
-}
-
-func (m scanModel) resultsView() string {
-	var b strings.Builder
-	score := scoreStyles.Foreground(scoreColor(m.rep.Score)).Render(fmt.Sprintf("%d/100", m.rep.Score))
-	b.WriteString(header(m.target) + "   score " + score + "   " +
-		faintStyle.Render(severityLine(m.rep.Counts)+"   "+m.rep.Duration.Round(time.Millisecond).String()) + "\n\n")
-	b.WriteString(m.table.View() + "\n")
-
-	if len(m.rep.Findings) > 0 {
-		i := m.table.Cursor()
-		if i < 0 || i >= len(m.rep.Findings) {
-			i = 0
-		}
-		f := m.rep.Findings[i]
-		head := sevStyle(f.Severity).Render("["+f.Severity.String()+"] ") +
-			lipgloss.NewStyle().Bold(true).Render(f.Title)
-		body := f.Summary
-		if f.Detail != "" {
-			body += "\n" + f.Detail
-		}
-		if f.Err != "" {
-			body += "\n! " + f.Err
-		}
-		b.WriteString("\n" + boxStyle.Width(boxWidth(m.width)).Render(head+"\n"+body) + "\n")
-	}
-
-	hint := "[↑/↓] navigate   [w] write report   [q] quit"
-	if m.status != "" {
-		hint = okStyle.Render(m.status) + "    " + hintStyle.Render(hint)
-	} else {
-		hint = hintStyle.Render(hint)
-	}
-	b.WriteString("\n" + hint)
-	return b.String()
-}
-
-func header(t checker.Target) string {
-	return titleStyle.Render("secaudit") +
-		faintStyle.Render(" — "+t.Domain+" ("+t.Ownership.String()+")")
-}
-
-// severityLine renders the counts map in severity order.
-func severityLine(counts map[string]int) string {
-	order := []string{"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"}
-	var parts []string
-	for _, sev := range order {
-		if n := counts[sev]; n > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", n, sev))
-		}
-	}
-	if len(parts) == 0 {
-		return "no findings"
-	}
-	return strings.Join(parts, " · ")
-}
-
-func boxWidth(w int) int {
-	if w <= 0 {
-		return 76
-	}
-	if w > 100 {
-		w = 100
-	}
-	return w - 4
-}
