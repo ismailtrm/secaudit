@@ -107,12 +107,16 @@ func (m scanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m scanModel) View() tea.View {
+// render returns the screen content (used by the parent app model, which wraps
+// it in a full-screen View).
+func (m scanModel) render() string {
 	if m.done {
-		return tea.NewView(m.resultsView())
+		return m.resultsView()
 	}
-	return tea.NewView(m.runningView())
+	return m.runningView()
 }
+
+func (m scanModel) View() tea.View { return tea.NewView(m.render()) }
 
 func (m scanModel) buildTable() table.Model {
 	cols := []table.Column{

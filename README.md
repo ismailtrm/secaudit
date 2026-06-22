@@ -23,13 +23,21 @@ go build -o secaudit .
 ## Usage
 
 ```sh
-secaudit scan example.com                 # interactive TUI (default)
-secaudit scan example.com --no-tui        # headless: print summary + write files
-secaudit scan example.com --format json   # write only JSON
-secaudit checkers list                    # show registered checkers + availability
+secaudit                       # full-screen launcher (centered search + mode bar)
+secaudit example.com           # jump straight in (launcher prefilled)
+secaudit example.com --no-tui  # headless: print summary + write report files
+secaudit example.com --format json
+secaudit checkers list         # registered checkers + availability
 ```
 
-Flags (`scan`):
+**Launcher keys:** type a domain · `tab` cycle ownership · `↑/↓` toggle mode ·
+`enter` scan · `esc` quit.
+**Results keys:** `↑/↓` navigate · `w` write report · `q` quit.
+
+The interactive UI runs full-screen (alternate screen) and restores your terminal
+on exit. `--no-tui` is a plain headless run.
+
+Flags:
 
 | Flag | Default | Values |
 |---|---|---|

@@ -23,7 +23,23 @@ var (
 	hintStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	boxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
 	scoreStyles = lipgloss.NewStyle().Bold(true)
+
+	// launcher
+	logoStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13"))
+	searchBox     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Foreground(lipgloss.Color("15")).Padding(0, 1)
+	footerBar     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	chipSelected  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("13")).Padding(0, 1)
+	chipNormal    = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1)
+	errStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 )
+
+// chip renders a labelled value, highlighted when selected.
+func chip(label string, selected bool) string {
+	if selected {
+		return chipSelected.Render(label)
+	}
+	return chipNormal.Render(label)
+}
 
 func sevStyle(s checker.Severity) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(sevColor[s]).Bold(s >= checker.SevHigh)

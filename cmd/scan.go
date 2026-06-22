@@ -18,30 +18,12 @@ import (
 	"github.com/ismailtrm/secaudit/internal/tui"
 )
 
-var (
-	flagOwnership string
-	flagMode      string
-	flagNoTUI     bool
-	flagFormat    string
-	flagOutDir    string
-)
-
+// scanCmd is an explicit alias for the bare `secaudit [domain]` form.
 var scanCmd = &cobra.Command{
 	Use:   "scan [domain]",
-	Short: "Scan a domain and produce a report",
-	Long: "Scan a domain with passive recon checks. With no --no-tui flag it opens " +
-		"an interactive wizard and live TUI; the domain argument is optional there.",
-	Args: cobra.MaximumNArgs(1),
-	RunE: runScan,
-}
-
-func init() {
-	f := scanCmd.Flags()
-	f.StringVar(&flagOwnership, "ownership", "own", "own|authorized|third-party")
-	f.StringVar(&flagMode, "mode", "passive", "passive|active")
-	f.BoolVar(&flagNoTUI, "no-tui", false, "headless: print summary and write report, no interactive UI")
-	f.StringVar(&flagFormat, "format", "both", "report files to write: both|md|json|none")
-	f.StringVar(&flagOutDir, "out", ".", "directory for report files")
+	Short: "Scan a domain (same as `secaudit [domain]`)",
+	Args:  cobra.MaximumNArgs(1),
+	RunE:  runScan,
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -54,13 +36,13 @@ func runScan(cmd *cobra.Command, args []string) error {
 	defer stop()
 
 	if flagNoTUI {
-		return runHeadlessCmd(ctx, domain0)
+		return runHeadless(ctx, domain0)
 	}
-	return runTUICmd(ctx, domain0)
+	return tui.RunInteractive(ctx, domain0, flagOwnership, flagMode, writeReport)
 }
 
-// runHeadlessCmd resolves parameters from flags (no interactive prompt).
-func runHeadlessCmd(ctx context.Context, domain0 string) error {
+// runHeadless resolves parameters from flags and prints/writes a report with no UI.
+func runHeadless(ctx context.Context, domain0 string) error {
 	if strings.TrimSpace(domain0) == "" {
 		return fmt.Errorf("a domain argument is required with --no-tui")
 	}
@@ -91,48 +73,32 @@ func runHeadlessCmd(ctx context.Context, domain0 string) error {
 	}
 	rep := report.Build(t, results, started)
 	fmt.Println(rep.Text())
-	paths, err := writeReportFiles(rep, t)
+	paths, err := writeReportFiles(rep)
 	for _, p := range paths {
 		fmt.Println("wrote", p)
 	}
 	return err
 }
 
-// runTUICmd opens the wizard, then the live scan TUI.
-func runTUICmd(ctx context.Context, domain0 string) error {
-	wiz, err := tui.RunWizard(ctx, domain0, flagOwnership, flagMode)
+// writeReport is the tui.WriteFunc: writes the report and returns a status line.
+func writeReport(rep report.Report) (string, error) {
+	paths, err := writeReportFiles(rep)
 	if err != nil {
-		return err
+		return "", err
 	}
-	t, err := checker.NewTarget(wiz.Domain, wiz.Ownership)
-	if err != nil {
-		return err
+	if len(paths) == 0 {
+		return "nothing written (--format none)", nil
 	}
-	checkers := checker.ByMode(wiz.Mode)
-	if len(checkers) == 0 {
-		return fmt.Errorf("no checkers registered for mode %s", wiz.Mode)
-	}
-	write := func(rep report.Report) (string, error) {
-		paths, err := writeReportFiles(rep, t)
-		if err != nil {
-			return "", err
-		}
-		if len(paths) == 0 {
-			return "nothing written (--format none)", nil
-		}
-		return "wrote " + strings.Join(paths, ", "), nil
-	}
-	return tui.RunScan(ctx, t, checkers, write)
+	return "wrote " + strings.Join(paths, ", "), nil
 }
 
-// writeReportFiles writes the report to disk per --format/--out and returns the
-// paths written.
-func writeReportFiles(rep report.Report, t checker.Target) ([]string, error) {
+// writeReportFiles writes the report per --format/--out and returns the paths.
+func writeReportFiles(rep report.Report) ([]string, error) {
 	if flagFormat == "none" {
 		return nil, nil
 	}
 	ts := rep.StartedAt.Format("20060102-150405")
-	base := filepath.Join(flagOutDir, fmt.Sprintf("report-%s-%s", t.Domain, ts))
+	base := filepath.Join(flagOutDir, fmt.Sprintf("report-%s-%s", rep.Domain, ts))
 
 	var paths []string
 	if flagFormat == "both" || flagFormat == "md" {

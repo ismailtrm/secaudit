@@ -1,0 +1,99 @@
+package tui
+
+import (
+	"context"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/ismailtrm/secaudit/internal/checker"
+	"github.com/ismailtrm/secaudit/internal/engine"
+)
+
+type screen int
+
+const (
+	screenLauncher screen = iota
+	screenScan
+)
+
+// appModel is the top-level full-screen program: it starts on the launcher and
+// transitions into the live scan once a target is submitted. The whole UI runs
+// in the alternate screen buffer (set in View) for a btop-style takeover.
+type appModel struct {
+	screen   screen
+	launcher launcherModel
+	scan     scanModel
+
+	ctx           context.Context
+	write         WriteFunc
+	width, height int
+}
+
+func newApp(ctx context.Context, domain0, ownership0, mode0 string, write WriteFunc) appModel {
+	return appModel{
+		launcher: newLauncher(domain0, ownership0, mode0),
+		ctx:      ctx,
+		write:    write,
+	}
+}
+
+func (m appModel) Init() tea.Cmd { return m.launcher.Init() }
+
+func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		m.launcher, _ = m.launcher.Update(msg)
+		if m.screen == screenScan {
+			sm, _ := m.scan.Update(msg)
+			m.scan = sm.(scanModel)
+		}
+		return m, nil
+
+	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+
+	case launchMsg:
+		checkers := checker.ByMode(msg.mode)
+		ch := engine.Run(m.ctx, msg.target, checkers, engine.Options{})
+		m.scan = newScanModel(msg.target, len(checkers), ch, time.Now(), m.write)
+		// Seed the scan model with the current terminal size so its table lays out.
+		if m.width > 0 {
+			sm, _ := m.scan.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			m.scan = sm.(scanModel)
+		}
+		m.screen = screenScan
+		return m, m.scan.Init()
+	}
+
+	if m.screen == screenLauncher {
+		var cmd tea.Cmd
+		m.launcher, cmd = m.launcher.Update(msg)
+		return m, cmd
+	}
+	sm, cmd := m.scan.Update(msg)
+	m.scan = sm.(scanModel)
+	return m, cmd
+}
+
+func (m appModel) View() tea.View {
+	content := m.launcher.View()
+	if m.screen == screenScan {
+		content = m.scan.render()
+	}
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
+}
+
+// RunInteractive launches the full-screen launcher → scan TUI. domain0 prefills
+// the search box (empty for a bare `secaudit`); ownership0/mode0 preselect the
+// bottom bar from CLI flags.
+func RunInteractive(ctx context.Context, domain0, ownership0, mode0 string, write WriteFunc) error {
+	m := newApp(ctx, domain0, ownership0, mode0, write)
+	_, err := tea.NewProgram(m, tea.WithContext(ctx)).Run()
+	return err
+}
