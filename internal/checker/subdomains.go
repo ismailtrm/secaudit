@@ -31,7 +31,7 @@ func (subdomainProbe) Available(context.Context) (bool, string) { return true, "
 const probeConcurrency = 25
 
 func (subdomainProbe) Run(ctx context.Context, t Target) ([]Finding, error) {
-	if resolvesA(ctx, "zzqx-secaudit-wildcard-probe."+t.Domain) {
+	if resolves(ctx, "zzqx-secaudit-wildcard-probe."+t.Domain) {
 		return []Finding{{CheckerID: "dns.subdomains", Category: CatOSINT, Severity: SevInfo,
 			Title:   "Wildcard DNS",
 			Summary: "every label resolves (wildcard record) — wordlist probe skipped"}}, nil
@@ -68,7 +68,7 @@ func probeNames(ctx context.Context, domain string, words []string, conc int) []
 			defer wg.Done()
 			defer func() { <-sem }()
 			host := w + "." + domain
-			if resolvesA(ctx, host) {
+			if resolves(ctx, host) {
 				mu.Lock()
 				found = append(found, host)
 				mu.Unlock()
@@ -79,13 +79,14 @@ func probeNames(ctx context.Context, domain string, words []string, conc int) []
 	return found
 }
 
-// resolvesA reports whether name has at least one A record.
-func resolvesA(ctx context.Context, name string) bool {
-	rrs, err := queryDNS(ctx, name, dns.TypeA)
-	if err != nil {
-		return false
+// resolves reports whether name has at least one A or AAAA record (an
+// IPv6-only host still counts as live).
+func resolves(ctx context.Context, name string) bool {
+	if rrs, err := queryDNS(ctx, name, dns.TypeA); err == nil && hasRRType(rrs, dns.TypeA) {
+		return true
 	}
-	return hasRRType(rrs, dns.TypeA)
+	rrs, err := queryDNS(ctx, name, dns.TypeAAAA)
+	return err == nil && hasRRType(rrs, dns.TypeAAAA)
 }
 
 // parseWordlist returns non-empty, non-comment lines from the embedded list.

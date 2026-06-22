@@ -15,11 +15,11 @@ func init() { Register(dnsRecords{}) }
 // security-relevant DNS (SPF/DMARC/CAA/MTA-STS) lives in dnsPolicy.
 type dnsRecords struct{}
 
-func (dnsRecords) ID() string                                  { return "dns.records" }
-func (dnsRecords) Name() string                                { return "DNS Records" }
-func (dnsRecords) Category() Category                          { return CatDNS }
-func (dnsRecords) Mode() Mode                                  { return Passive }
-func (dnsRecords) Available(context.Context) (bool, string)    { return true, "" }
+func (dnsRecords) ID() string                               { return "dns.records" }
+func (dnsRecords) Name() string                             { return "DNS Records" }
+func (dnsRecords) Category() Category                       { return CatDNS }
+func (dnsRecords) Mode() Mode                               { return Passive }
+func (dnsRecords) Available(context.Context) (bool, string) { return true, "" }
 
 func (dnsRecords) Run(ctx context.Context, t Target) ([]Finding, error) {
 	var findings []Finding

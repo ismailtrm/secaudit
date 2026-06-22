@@ -16,8 +16,9 @@ func TestNewTarget(t *testing.T) {
 		{"https://www.example.com/path", "example.com", "www.example.com", false},
 		{"http://sub.example.co.uk", "example.co.uk", "sub.example.co.uk", false},
 		{"  example.com  ", "example.com", "example.com", false},
-		{"1.2.3.4", "", "", true}, // IPs rejected
-		{"", "", "", true},        // empty rejected
+		{"1.2.3.4", "", "", true},         // IPs rejected
+		{"", "", "", true},                // empty rejected
+		{"-oG.example.com", "", "", true}, // leading-hyphen host rejected (arg-injection guard)
 		{"münchen.de", "xn--mnchen-3ya.de", "xn--mnchen-3ya.de", false}, // IDN → punycode
 	}
 	for _, tc := range tests {

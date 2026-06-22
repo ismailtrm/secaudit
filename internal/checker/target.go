@@ -49,6 +49,11 @@ func NewTarget(raw string, owner Ownership) (Target, error) {
 	if err != nil {
 		return Target{}, fmt.Errorf("idna %q: %w", host, err)
 	}
+	// Defense in depth: a leading hyphen would be read as a flag if the host is
+	// ever passed as a positional argv to an external scanner (nmap).
+	if strings.HasPrefix(asciiHost, "-") {
+		return Target{}, fmt.Errorf("invalid host %q: leading hyphen", asciiHost)
+	}
 	apex, err := publicsuffix.EffectiveTLDPlusOne(asciiHost)
 	if err != nil {
 		// Unknown suffix (e.g. internal TLD): fall back to the host itself.

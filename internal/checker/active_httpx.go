@@ -45,8 +45,8 @@ func (httpxScan) RunStream(ctx context.Context, t Target, emit Emitter) ([]Findi
 		findings = append(findings, f)
 		emit(f)
 	}, "httpx", "-json", "-tech-detect", "-status-code", "-title", "-silent", "-no-color")
-	if err != nil && len(findings) == 0 {
-		return nil, fmt.Errorf("httpx: %w", err)
+	if err != nil {
+		return findings, fmt.Errorf("httpx: %w", err)
 	}
 	if len(findings) == 0 {
 		f := Finding{CheckerID: "active.httpx", Category: CatHTTP, Severity: SevInfo,
@@ -71,7 +71,7 @@ func gatherHosts(ctx context.Context, t Target) []string {
 			}
 		}
 	}
-	if !resolvesA(ctx, "zzqx-secaudit-wildcard-probe."+t.Domain) {
+	if !resolves(ctx, "zzqx-secaudit-wildcard-probe."+t.Domain) {
 		for _, h := range probeNames(ctx, t.Domain, parseWordlist(wordlistRaw), probeConcurrency) {
 			set[h] = struct{}{}
 		}
@@ -99,8 +99,15 @@ func httpxFinding(r httpxResult) Finding {
 	if r.Webserver != "" {
 		parts = append(parts, r.Webserver)
 	}
-	if len(r.Tech) > 0 {
-		parts = append(parts, strings.Join(r.Tech, ", "))
+	// Drop the webserver from the tech list so it isn't shown twice.
+	var techs []string
+	for _, tech := range r.Tech {
+		if !strings.EqualFold(tech, r.Webserver) {
+			techs = append(techs, tech)
+		}
+	}
+	if len(techs) > 0 {
+		parts = append(parts, strings.Join(techs, ", "))
 	}
 	host := r.URL
 	if u, err := url.Parse(r.URL); err == nil && u.Host != "" {

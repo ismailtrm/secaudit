@@ -15,10 +15,10 @@ func init() { Register(nmapScan{}) }
 // services. Active: only runs on own/authorized targets (gated by guard).
 type nmapScan struct{}
 
-func (nmapScan) ID() string                            { return "active.nmap" }
-func (nmapScan) Name() string                          { return "nmap Port Scan" }
-func (nmapScan) Category() Category                    { return CatPort }
-func (nmapScan) Mode() Mode                            { return Active }
+func (nmapScan) ID() string                               { return "active.nmap" }
+func (nmapScan) Name() string                             { return "nmap Port Scan" }
+func (nmapScan) Category() Category                       { return CatPort }
+func (nmapScan) Mode() Mode                               { return Active }
 func (nmapScan) Available(context.Context) (bool, string) { return tool.Available("nmap") }
 
 func (c nmapScan) Run(ctx context.Context, t Target) ([]Finding, error) {

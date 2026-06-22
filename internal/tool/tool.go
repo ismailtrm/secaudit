@@ -54,5 +54,12 @@ func Stream(ctx context.Context, stdin string, onLine func(string), name string,
 	for sc.Scan() {
 		onLine(sc.Text())
 	}
-	return cmd.Wait()
+	// A scanner error (e.g. a line over the buffer cap) means output was
+	// truncated — surface it rather than letting Wait() report success.
+	scanErr := sc.Err()
+	waitErr := cmd.Wait()
+	if waitErr != nil {
+		return waitErr
+	}
+	return scanErr
 }

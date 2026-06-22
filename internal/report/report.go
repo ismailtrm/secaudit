@@ -4,6 +4,7 @@ package report
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ismailtrm/secaudit/internal/checker"
@@ -11,16 +12,16 @@ import (
 
 // Report is the aggregate output of one scan.
 type Report struct {
-	Domain    string                    `json:"domain"`
-	Host      string                    `json:"host"`
-	Ownership string                    `json:"ownership"`
-	Mode      string                    `json:"mode"`
-	StartedAt time.Time                 `json:"started_at"`
-	Duration  time.Duration             `json:"duration_ns"`
-	Score     int                       `json:"score"` // 0-100, higher is healthier
-	Counts    map[string]int            `json:"counts"`
-	Findings  []checker.Finding         `json:"findings"` // flattened, severity-sorted
-	Results   []checker.Result          `json:"results"`  // per-checker, incl. skipped
+	Domain    string            `json:"domain"`
+	Host      string            `json:"host"`
+	Ownership string            `json:"ownership"`
+	Mode      string            `json:"mode"`
+	StartedAt time.Time         `json:"started_at"`
+	Duration  time.Duration     `json:"duration_ns"`
+	Score     int               `json:"score"` // 0-100, higher is healthier
+	Counts    map[string]int    `json:"counts"`
+	Findings  []checker.Finding `json:"findings"` // flattened, severity-sorted
+	Results   []checker.Result  `json:"results"`  // per-checker, incl. skipped
 }
 
 // severityPenalty is subtracted from a starting score of 100 per finding.
@@ -44,8 +45,12 @@ func Build(t checker.Target, results []checker.Result, started time.Time) Report
 		Results:   results,
 	}
 
+	r.Mode = "passive"
 	score := 100
 	for _, res := range results {
+		if strings.HasPrefix(res.CheckerID, "active.") {
+			r.Mode = "active"
+		}
 		for _, f := range res.Findings {
 			r.Findings = append(r.Findings, f)
 			r.Counts[f.Severity.String()]++

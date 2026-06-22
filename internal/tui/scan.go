@@ -58,6 +58,7 @@ type scanModel struct {
 	catOrder    []checker.Category
 	pending     map[string]string // checkerID → name, still running
 	feed        []feedItem
+	liveSev     map[checker.Severity]int // running tally, incl. streamed findings
 
 	// results screen
 	done      bool
@@ -95,6 +96,7 @@ func newScanModel(t checker.Target, checkers []checker.Checker, ch <-chan engine
 		receivedCat: map[checker.Category]int{},
 		catOrder:    catOrder,
 		pending:     pending,
+		liveSev:     map[checker.Severity]int{},
 	}
 }
 
@@ -120,6 +122,7 @@ func (m scanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case findingMsg:
 		f := checker.Finding(msg)
 		m.feed = append(m.feed, feedItem{elapsed: time.Since(m.started), cat: f.Category, sev: f.Severity, title: f.Title})
+		m.liveSev[f.Severity]++
 		return m, waitForEvent(m.ch)
 
 	case resultMsg:
@@ -132,6 +135,7 @@ func (m scanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !r.Streamed {
 			for _, f := range r.Findings {
 				m.feed = append(m.feed, feedItem{elapsed: now, cat: f.Category, sev: f.Severity, title: f.Title})
+				m.liveSev[f.Severity]++
 			}
 		}
 		if r.Skipped {
@@ -167,7 +171,7 @@ func (m scanModel) handleResultsKey(key string) scanModel {
 	case "g", "home":
 		m.cursor, m.scroll = 0, 0
 	case "f":
-		m.minSev = (m.minSev + 1) % 4 // info → low → medium → high → info
+		m.minSev = (m.minSev + 1) % 5 // info → low → medium → high → critical → info
 		m.applyFilterSort()
 	case "s":
 		m.sortByCat = !m.sortByCat
@@ -225,15 +229,10 @@ func (m *scanModel) applyFilterSort() {
 	}
 }
 
-// liveCounts tallies severities seen so far during scanning.
+// liveCounts returns the running severity tally, including findings streamed by
+// active checkers that haven't completed yet.
 func (m scanModel) liveCounts() map[checker.Severity]int {
-	c := map[checker.Severity]int{}
-	for _, r := range m.results {
-		for _, f := range r.Findings {
-			c[f.Severity]++
-		}
-	}
-	return c
+	return m.liveSev
 }
 
 func (m scanModel) render() string {

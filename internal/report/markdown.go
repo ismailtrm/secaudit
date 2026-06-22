@@ -14,6 +14,7 @@ func (r Report) Markdown() string {
 	fmt.Fprintf(&b, "# secaudit report — %s\n\n", r.Domain)
 	fmt.Fprintf(&b, "- **Host scanned:** %s\n", r.Host)
 	fmt.Fprintf(&b, "- **Ownership:** %s\n", r.Ownership)
+	fmt.Fprintf(&b, "- **Mode:** %s\n", r.Mode)
 	fmt.Fprintf(&b, "- **Started:** %s\n", r.StartedAt.Format("2006-01-02 15:04:05 MST"))
 	fmt.Fprintf(&b, "- **Duration:** %s\n", r.Duration.Round(1e6))
 	fmt.Fprintf(&b, "- **Health score:** %d/100\n\n", r.Score)

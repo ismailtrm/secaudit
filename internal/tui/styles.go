@@ -23,21 +23,21 @@ var (
 	scoreStyles = lipgloss.NewStyle().Bold(true)
 
 	// launcher
-	logoStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13"))
-	searchBox     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Foreground(lipgloss.Color("15")).Padding(0, 1)
-	footerBar     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	chipSelected  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("13")).Padding(0, 1)
-	chipNormal    = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1)
-	errStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	logoStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13"))
+	searchBox    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Foreground(lipgloss.Color("15")).Padding(0, 1)
+	footerBar    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	chipSelected = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("13")).Padding(0, 1)
+	chipNormal   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Padding(0, 1)
+	errStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 )
 
 var (
-	borderStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	titleStyle2   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13"))
-	selectedBg    = lipgloss.Color("236")
-	barFull       = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	barEmpty      = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-	keyStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("213"))
+	borderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	titleStyle2 = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13"))
+	selectedBg  = lipgloss.Color("236")
+	barFull     = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	barEmpty    = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	keyStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("213"))
 )
 
 // chip renders a labelled value, highlighted when selected.

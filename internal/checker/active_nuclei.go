@@ -16,10 +16,10 @@ func init() { Register(nucleiScan{}) }
 // by guard. Defaults to low+ severity to skip the very noisy info templates.
 type nucleiScan struct{}
 
-func (nucleiScan) ID() string                              { return "active.nuclei" }
-func (nucleiScan) Name() string                            { return "nuclei Templates" }
-func (nucleiScan) Category() Category                      { return CatVuln }
-func (nucleiScan) Mode() Mode                              { return Active }
+func (nucleiScan) ID() string                               { return "active.nuclei" }
+func (nucleiScan) Name() string                             { return "nuclei Templates" }
+func (nucleiScan) Category() Category                       { return CatVuln }
+func (nucleiScan) Mode() Mode                               { return Active }
 func (nucleiScan) Available(context.Context) (bool, string) { return tool.Available("nuclei") }
 
 func (c nucleiScan) Run(ctx context.Context, t Target) ([]Finding, error) {
@@ -44,8 +44,10 @@ func (nucleiScan) RunStream(ctx context.Context, t Target, emit Emitter) ([]Find
 		"-jsonl", "-silent", "-no-color", "-duc", // duc: disable update check
 		"-severity", "low,medium,high,critical",
 	)
-	if err != nil && len(findings) == 0 {
-		return nil, fmt.Errorf("nuclei: %w", err)
+	// Surface the error even when some findings streamed: a cut-short scan must
+	// not read as "clean". The partial findings are still returned.
+	if err != nil {
+		return findings, fmt.Errorf("nuclei: %w", err)
 	}
 	if len(findings) == 0 {
 		f := Finding{CheckerID: "active.nuclei", Category: CatVuln, Severity: SevInfo,

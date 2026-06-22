@@ -25,6 +25,14 @@ func Open(path string) (*Cache, error) {
 	if err != nil {
 		return nil, err
 	}
+	// SQLite tolerates one writer at a time. Parallel checkers (crt.sh, wayback)
+	// Set concurrently, so serialize on a single connection and wait on a busy DB
+	// rather than dropping the write.
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`PRAGMA busy_timeout=5000`); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS entries (
 		key        TEXT PRIMARY KEY,
 		value      BLOB NOT NULL,

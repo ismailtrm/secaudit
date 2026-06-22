@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ismailtrm/secaudit/internal/checker"
+	"github.com/ismailtrm/secaudit/internal/guard"
 )
 
 const (
@@ -82,6 +83,14 @@ func runOne(ctx context.Context, c checker.Checker, t checker.Target, timeout ti
 			res.Err = fmt.Sprintf("panic: %v", r)
 		}
 	}()
+
+	// Central guardrail: even if a caller forgot to authorize, the engine will
+	// not run an active checker against a target the user can't scan.
+	if err := guard.Authorize(t.Ownership, c.Mode()); err != nil {
+		res.Skipped = true
+		res.Reason = "blocked (unauthorized active scan)"
+		return res
+	}
 
 	if ok, reason := c.Available(ctx); !ok {
 		res.Skipped = true

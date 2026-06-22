@@ -1,7 +1,9 @@
 // Package guard enforces the legal guardrail: active probing requires ownership
-// or written authorization. The check lives here, separate from the UI, and is
-// called from both the engine and the TUI wizard so it cannot be bypassed by
-// scripting around the interactive prompt.
+// or written authorization. Authorize is the single source of truth for the
+// policy and is enforced in three places: the launcher (for clear UX), the
+// headless command path, and — as the unbypassable backstop — engine.runOne,
+// which refuses to run any active checker against a third-party target even if a
+// caller forgot to check.
 package guard
 
 import (
