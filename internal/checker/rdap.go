@@ -62,14 +62,7 @@ func (rdapInfo) Run(ctx context.Context, t Target) ([]Finding, error) {
 			strings.Join(ns, ", "), map[string]any{"nameservers": ns}))
 	}
 
-	// DNSSEC delegation.
-	if dom.SecureDNS != nil && dom.SecureDNS.DelegationSigned != nil {
-		if *dom.SecureDNS.DelegationSigned {
-			findings = append(findings, add(SevInfo, "DNSSEC", "delegation signed", nil))
-		} else {
-			findings = append(findings, add(SevLow, "DNSSEC not enabled", "delegation unsigned", nil))
-		}
-	}
+	// DNSSEC is reported by the dedicated dns.dnssec checker (live DS/DNSKEY/RRSIG).
 
 	// Hosting IP network (best-effort ASN/network attribution).
 	if netFinding := ipNetwork(ctx, client, t); netFinding != nil {

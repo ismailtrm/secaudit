@@ -49,11 +49,14 @@ Reports are written as `report-<domain>-<timestamp>.{md,json}`.
 | `dns.policy` | CAA, SPF, DMARC, MTA-STS, TLS-RPT (with quality scoring) |
 | `tls.cert` | certificate expiry, SAN/hostname, chain trust, protocol version |
 | `http.headers` | server banner, redirect chain, CSP/HSTS/X-Frame-Options/Referrer-Policy |
-| `rdap` | registrar, creation/expiry, nameservers, DNSSEC, hosting network |
+| `rdap` | registrar, creation/expiry, nameservers, hosting network |
+| `dns.dnssec` | live DNSSEC: DS at parent + DNSKEY/RRSIG at apex (chain of trust) |
+| `dns.subdomains` | wordlist probe of common labels (with wildcard-DNS detection) |
 | `osint.crtsh` | subdomains from Certificate Transparency logs (cached, retry on 502) |
+| `osint.wayback` | Internet Archive snapshot availability (cached) |
 
-crt.sh results are cached in a small SQLite TTL store (`~/.config/secaudit/cache.db`)
-so repeated scans don't re-hit the flaky service.
+crt.sh and Wayback results are cached in a small SQLite TTL store
+(`~/.config/secaudit/cache.db`) so repeated scans don't re-hit flaky services.
 
 Adding a checker is one file: implement `checker.Checker` and call
 `checker.Register` from an `init()`. The engine and TUI discover it automatically.

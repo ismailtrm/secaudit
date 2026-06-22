@@ -43,6 +43,33 @@ func queryDNS(ctx context.Context, name string, qtype uint16) ([]dns.RR, error) 
 	return resp.Answer, nil
 }
 
+// queryWithDNSSEC queries name/qtype with the EDNS0 DO bit set so the resolver
+// returns RRSIG records, which prove a zone is actually serving signatures.
+func queryWithDNSSEC(ctx context.Context, name string, qtype uint16) ([]dns.RR, error) {
+	m := new(dns.Msg)
+	m.SetQuestion(dns.Fqdn(name), qtype)
+	m.SetEdns0(4096, true)
+	m.RecursionDesired = true
+	resp, _, err := dnsClient.ExchangeContext(ctx, m, resolver())
+	if err != nil {
+		return nil, err
+	}
+	if resp.Rcode != dns.RcodeSuccess && resp.Rcode != dns.RcodeNameError {
+		return nil, fmt.Errorf("dnssec %s for %s: %s", dns.TypeToString[qtype], name, dns.RcodeToString[resp.Rcode])
+	}
+	return resp.Answer, nil
+}
+
+// hasRRType reports whether any RR in rrs has the given type.
+func hasRRType(rrs []dns.RR, qtype uint16) bool {
+	for _, rr := range rrs {
+		if rr.Header().Rrtype == qtype {
+			return true
+		}
+	}
+	return false
+}
+
 // txtRecords returns the concatenated TXT strings for name.
 func txtRecords(ctx context.Context, name string) ([]string, error) {
 	rrs, err := queryDNS(ctx, name, dns.TypeTXT)
