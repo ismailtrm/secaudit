@@ -16,6 +16,27 @@ var sevColor = map[checker.Severity]color.Color{
 	checker.SevInfo:     lipgloss.Color("245"), // gray
 }
 
+// catColor gives each category a distinct hue so the category column reads as a
+// color band, helping the eye group findings by source.
+var catColor = map[checker.Category]color.Color{
+	checker.CatDNS:   lipgloss.Color("39"),  // cyan
+	checker.CatEmail: lipgloss.Color("141"), // violet
+	checker.CatTLS:   lipgloss.Color("78"),  // green
+	checker.CatHTTP:  lipgloss.Color("180"), // tan
+	checker.CatWhois: lipgloss.Color("244"), // gray
+	checker.CatOSINT: lipgloss.Color("110"), // steel blue
+	checker.CatPort:  lipgloss.Color("214"), // amber
+	checker.CatVuln:  lipgloss.Color("203"), // salmon
+}
+
+func catStyle(c checker.Category) lipgloss.Style {
+	col, ok := catColor[c]
+	if !ok {
+		col = lipgloss.Color("245")
+	}
+	return lipgloss.NewStyle().Foreground(col)
+}
+
 var (
 	faintStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	okStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
@@ -38,6 +59,11 @@ var (
 	barFull     = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	barEmpty    = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 	keyStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("213"))
+
+	// Pane accents carry meaning: passive recon is always-safe (cool cyan),
+	// active probing is intrusive (warm orange).
+	accentPassive = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	accentActive  = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
 )
 
 // chip renders a labelled value, highlighted when selected.

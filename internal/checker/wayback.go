@@ -74,7 +74,7 @@ func (wayback) Run(ctx context.Context, t Target) ([]Finding, error) {
 		when = ts.Format("2006-01-02")
 	}
 	return info("Archived in Wayback",
-		fmt.Sprintf("closest snapshot %s — %s", when, closest.URL),
+		fmt.Sprintf("closest snapshot %s: %s", when, closest.URL),
 		map[string]any{"timestamp": closest.Timestamp, "url": closest.URL}), nil
 }
 

@@ -37,14 +37,14 @@ func (dnssecCheck) Run(ctx context.Context, t Target) ([]Finding, error) {
 
 	switch {
 	case signed && hasDS:
-		return one(SevInfo, "DNSSEC enabled", "signed zone with DS at parent — chain of trust intact"), nil
+		return one(SevInfo, "DNSSEC enabled", "signed zone with DS at parent: chain of trust intact"), nil
 	case signed && !hasDS:
 		return one(SevLow, "DNSSEC chain incomplete",
-			"zone is signed (DNSKEY+RRSIG) but no DS at the registry — resolvers can't validate it"), nil
+			"zone is signed (DNSKEY+RRSIG) but no DS at the registry: resolvers can't validate it"), nil
 	case hasDS && !signed:
 		return one(SevLow, "DNSSEC inconsistent",
 			"DS present at parent but the zone is not serving signatures"), nil
 	default:
-		return one(SevLow, "DNSSEC not enabled", "zone is unsigned — DNS responses can be spoofed"), nil
+		return one(SevLow, "DNSSEC not enabled", "zone is unsigned: DNS responses can be spoofed"), nil
 	}
 }

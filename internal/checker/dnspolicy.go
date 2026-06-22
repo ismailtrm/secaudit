@@ -89,13 +89,13 @@ func spfQuality(spf string) (Severity, string) {
 	low := strings.ToLower(spf)
 	switch {
 	case strings.Contains(low, "+all"):
-		return SevHigh, "+all permits any sender — SPF provides no protection"
+		return SevHigh, "+all permits any sender: SPF provides no protection"
 	case strings.Contains(low, "-all"):
-		return SevInfo, "-all (hard fail) — strict, recommended"
+		return SevInfo, "-all (hard fail): strict, recommended"
 	case strings.Contains(low, "~all"):
-		return SevLow, "~all (soft fail) — consider tightening to -all"
+		return SevLow, "~all (soft fail): consider tightening to -all"
 	case strings.Contains(low, "?all"):
-		return SevLow, "?all (neutral) — provides little protection"
+		return SevLow, "?all (neutral): provides little protection"
 	default:
 		return SevInfo, "SPF present"
 	}
@@ -106,11 +106,11 @@ func dmarcQuality(dmarc string) (Severity, string) {
 	p := tagValue(dmarc, "p")
 	switch strings.ToLower(p) {
 	case "reject":
-		return SevInfo, "p=reject — strongest policy"
+		return SevInfo, "p=reject: strongest policy"
 	case "quarantine":
-		return SevInfo, "p=quarantine — spoofed mail sent to spam"
+		return SevInfo, "p=quarantine: spoofed mail sent to spam"
 	case "none":
-		return SevLow, "p=none — monitoring only, no enforcement"
+		return SevLow, "p=none: monitoring only, no enforcement"
 	default:
 		return SevLow, "DMARC present but policy unclear"
 	}

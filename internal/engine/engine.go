@@ -27,7 +27,18 @@ const (
 // Options tunes a run. Zero values fall back to defaults.
 type Options struct {
 	Concurrency    int           // max checkers running at once
-	CheckerTimeout time.Duration // hard cap per checker
+	PassiveTimeout time.Duration // hard cap per passive checker
+	ActiveTimeout  time.Duration // hard cap per active checker (defaults to PassiveTimeout)
+}
+
+// timeoutFor returns the per-checker cap. A combined passive+active scan keeps
+// the short passive cap on passive checkers so a hung DNS lookup never holds the
+// scan open for the long active budget.
+func (o Options) timeoutFor(m checker.Mode) time.Duration {
+	if m == checker.Active {
+		return o.ActiveTimeout
+	}
+	return o.PassiveTimeout
 }
 
 // Event is one item on the engine's output stream: exactly one of Finding or
@@ -43,8 +54,11 @@ func Run(ctx context.Context, t checker.Target, checkers []checker.Checker, opts
 	if opts.Concurrency <= 0 {
 		opts.Concurrency = defaultConcurrency
 	}
-	if opts.CheckerTimeout <= 0 {
-		opts.CheckerTimeout = defaultCheckerTimeout
+	if opts.PassiveTimeout <= 0 {
+		opts.PassiveTimeout = defaultCheckerTimeout
+	}
+	if opts.ActiveTimeout <= 0 {
+		opts.ActiveTimeout = opts.PassiveTimeout
 	}
 
 	out := make(chan Event, 256)
@@ -60,7 +74,7 @@ func Run(ctx context.Context, t checker.Target, checkers []checker.Checker, opts
 					case <-gctx.Done():
 					}
 				}
-				res := runOne(gctx, c, t, opts.CheckerTimeout, func(f checker.Finding) {
+				res := runOne(gctx, c, t, opts.timeoutFor(c.Mode()), func(f checker.Finding) {
 					send(Event{Finding: &f})
 				})
 				send(Event{Result: &res})

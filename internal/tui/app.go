@@ -28,13 +28,17 @@ type appModel struct {
 	ctx           context.Context
 	write         WriteFunc
 	width, height int
+
+	scanGen    int                // increments per scan; tags events to drop stale ones
+	scanCancel context.CancelFunc // cancels the in-flight scan
 }
 
-// optsFor gives active scans a long per-checker budget (nuclei/nmap run for
-// minutes); passive scans keep the default short timeout.
+// optsFor gives the active checkers in a combined scan a long per-checker budget
+// (nuclei/nmap run for minutes); passive checkers keep the engine's short
+// default even when active scanning is enabled.
 func optsFor(mode checker.Mode) engine.Options {
 	if mode == checker.Active {
-		return engine.Options{CheckerTimeout: 15 * time.Minute}
+		return engine.Options{ActiveTimeout: 15 * time.Minute}
 	}
 	return engine.Options{}
 }
@@ -66,9 +70,15 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case launchMsg:
+		if m.scanCancel != nil {
+			m.scanCancel() // cancel any prior scan before starting a new one
+		}
+		m.scanGen++
+		sctx, cancel := context.WithCancel(m.ctx)
+		m.scanCancel = cancel
 		checkers := checker.ByMode(msg.mode)
-		ch := engine.Run(m.ctx, msg.target, checkers, optsFor(msg.mode))
-		m.scan = newScanModel(msg.target, checkers, ch, time.Now(), m.write)
+		ch := engine.Run(sctx, msg.target, checkers, optsFor(msg.mode))
+		m.scan = newScanModel(m.scanGen, msg.target, checkers, ch, time.Now(), m.write)
 		// Seed the scan model with the current terminal size so its table lays out.
 		if m.width > 0 {
 			sm, _ := m.scan.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
@@ -76,6 +86,15 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.screen = screenScan
 		return m, m.scan.Init()
+
+	case backToLauncherMsg:
+		if m.scanCancel != nil {
+			m.scanCancel()
+			m.scanCancel = nil
+		}
+		m.screen = screenLauncher
+		m.launcher = m.launcher.prefill(msg.domain)
+		return m, m.launcher.Init()
 	}
 
 	if m.screen == screenLauncher {

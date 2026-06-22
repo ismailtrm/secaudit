@@ -101,19 +101,19 @@ var riskyPort = map[int]struct {
 	sev  Severity
 	note string
 }{
-	21:    {SevMedium, "FTP — frequently plaintext"},
-	23:    {SevHigh, "Telnet — plaintext credentials, should never be exposed"},
+	21:    {SevMedium, "FTP: frequently plaintext"},
+	23:    {SevHigh, "Telnet: plaintext credentials, should never be exposed"},
 	135:   {SevMedium, "MSRPC exposed"},
 	445:   {SevMedium, "SMB exposed"},
 	1433:  {SevHigh, "MSSQL exposed to the internet"},
-	2375:  {SevCritical, "Docker API exposed — unauthenticated root"},
+	2375:  {SevCritical, "Docker API exposed: unauthenticated root"},
 	3306:  {SevHigh, "MySQL exposed to the internet"},
 	3389:  {SevMedium, "RDP exposed"},
 	5432:  {SevHigh, "PostgreSQL exposed to the internet"},
 	5900:  {SevMedium, "VNC exposed"},
-	6379:  {SevHigh, "Redis exposed — often unauthenticated"},
-	9200:  {SevHigh, "Elasticsearch exposed — often unauthenticated"},
-	11211: {SevHigh, "Memcached exposed — amplification/abuse risk"},
+	6379:  {SevHigh, "Redis exposed: often unauthenticated"},
+	9200:  {SevHigh, "Elasticsearch exposed: often unauthenticated"},
+	11211: {SevHigh, "Memcached exposed: amplification/abuse risk"},
 	27017: {SevHigh, "MongoDB exposed to the internet"},
 }
 
@@ -129,12 +129,12 @@ func nmapFinding(p nmapPort) Finding {
 		}
 		svc += ")"
 	}
-	title := "Port " + strconv.Itoa(p.num) + "/" + p.proto + " open — " + p.service
+	title := "Port " + strconv.Itoa(p.num) + "/" + p.proto + " open: " + p.service
 	sev := SevInfo
 	summary := svc
 	if r, ok := riskyPort[p.num]; ok {
 		sev = r.sev
-		summary = r.note + " — " + svc
+		summary = r.note + " · " + svc
 	}
 	return Finding{
 		CheckerID: "active.nmap", Category: CatPort, Severity: sev,

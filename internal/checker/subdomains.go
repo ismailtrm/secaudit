@@ -34,7 +34,7 @@ func (subdomainProbe) Run(ctx context.Context, t Target) ([]Finding, error) {
 	if resolves(ctx, "zzqx-secaudit-wildcard-probe."+t.Domain) {
 		return []Finding{{CheckerID: "dns.subdomains", Category: CatOSINT, Severity: SevInfo,
 			Title:   "Wildcard DNS",
-			Summary: "every label resolves (wildcard record) — wordlist probe skipped"}}, nil
+			Summary: "every label resolves (wildcard record): wordlist probe skipped"}}, nil
 	}
 
 	words := parseWordlist(wordlistRaw)

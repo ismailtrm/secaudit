@@ -69,7 +69,7 @@ func runHeadless(ctx context.Context, domain0 string) error {
 	started := time.Now()
 	opts := engine.Options{}
 	if mode == checker.Active {
-		opts.CheckerTimeout = 15 * time.Minute
+		opts.ActiveTimeout = 15 * time.Minute
 	}
 	var results []checker.Result
 	for ev := range engine.Run(ctx, t, checkers, opts) {

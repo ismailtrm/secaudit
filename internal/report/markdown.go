@@ -11,7 +11,7 @@ import (
 // Markdown renders the report as a shareable markdown document.
 func (r Report) Markdown() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# secaudit report — %s\n\n", r.Domain)
+	fmt.Fprintf(&b, "# secaudit report: %s\n\n", r.Domain)
 	fmt.Fprintf(&b, "- **Host scanned:** %s\n", r.Host)
 	fmt.Fprintf(&b, "- **Ownership:** %s\n", r.Ownership)
 	fmt.Fprintf(&b, "- **Mode:** %s\n", r.Mode)
@@ -61,7 +61,7 @@ func (r Report) Markdown() string {
 	if skipped := r.SkippedResults(); len(skipped) > 0 {
 		b.WriteString("## Skipped checks\n\n")
 		for _, s := range skipped {
-			fmt.Fprintf(&b, "- **%s** — %s\n", s.Name, s.Reason)
+			fmt.Fprintf(&b, "- **%s**: %s\n", s.Name, s.Reason)
 		}
 		b.WriteString("\n")
 	}

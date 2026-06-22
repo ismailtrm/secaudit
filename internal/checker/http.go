@@ -56,7 +56,7 @@ func (httpHeaders) Run(ctx context.Context, t Target) ([]Finding, error) {
 		banner = "(no Server header)"
 	}
 	findings = append(findings, add(SevInfo, "Server banner",
-		fmt.Sprintf("%s — HTTP %d", banner, resp.StatusCode),
+		fmt.Sprintf("%s (HTTP %d)", banner, resp.StatusCode),
 		map[string]any{"server": server, "x_powered_by": powered, "status": resp.StatusCode}))
 
 	// Redirect chain / HTTPS reachability.
@@ -84,11 +84,11 @@ func (httpHeaders) Run(ctx context.Context, t Target) ([]Finding, error) {
 		}
 	}
 	checkPresent(&findings, add, h, "Content-Security-Policy", SevLow,
-		"no CSP — reduced XSS/injection mitigation")
+		"no CSP: reduced XSS/injection mitigation")
 	checkPresent(&findings, add, h, "X-Frame-Options", SevLow,
-		"no X-Frame-Options — clickjacking possible (unless CSP frame-ancestors set)")
+		"no X-Frame-Options: clickjacking possible (unless CSP frame-ancestors set)")
 	checkPresent(&findings, add, h, "X-Content-Type-Options", SevLow,
-		"no X-Content-Type-Options: nosniff — MIME sniffing possible")
+		"no X-Content-Type-Options: nosniff. MIME sniffing possible")
 	checkPresent(&findings, add, h, "Referrer-Policy", SevInfo,
 		"no Referrer-Policy")
 

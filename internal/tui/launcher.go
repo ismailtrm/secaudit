@@ -21,7 +21,10 @@ var (
 	ownerships    = []checker.Ownership{checker.Own, checker.Authorized, checker.ThirdParty}
 	ownershipName = []string{"own", "authorized", "third-party"}
 	scanModes     = []checker.Mode{checker.Passive, checker.Active}
-	modeName      = []string{"passive", "active"}
+	modeName      = []string{"passive", "active"} // matches --mode flag values
+	// modeLabel is the launcher display: "active" means passive + active, since a
+	// combined scan always runs the passive checks too.
+	modeLabel = []string{"passive only", "passive + active"}
 )
 
 // launcherModel is the full-screen home screen: a centered search box plus a
@@ -36,8 +39,8 @@ type launcherModel struct {
 
 func newLauncher(domain0, ownership0, mode0 string) launcherModel {
 	ti := textinput.New()
-	ti.Placeholder = "enter a domain…"
-	ti.Prompt = "🔍 "
+	ti.Placeholder = "enter a domain to scan"
+	ti.Prompt = "› "
 	ti.CharLimit = 253
 	ti.SetWidth(36)
 	ti.SetVirtualCursor(true)
@@ -52,6 +55,14 @@ func newLauncher(domain0, ownership0, mode0 string) launcherModel {
 }
 
 func (l launcherModel) Init() tea.Cmd { return l.input.Focus() }
+
+// prefill returns to the launcher with the input set to domain and any prior
+// error cleared, for the "new scan" / cancel flow.
+func (l launcherModel) prefill(domain string) launcherModel {
+	l.input.SetValue(domain)
+	l.err = ""
+	return l
+}
 
 func (l launcherModel) Update(msg tea.Msg) (launcherModel, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -95,7 +106,7 @@ func (l launcherModel) submit() (launcherModel, tea.Cmd) {
 	owner := ownerships[l.ownership]
 	mode := scanModes[l.mode]
 	if err := guard.Authorize(owner, mode); err != nil {
-		l.err = "third-party + active is not allowed — switch to passive (↑/↓)"
+		l.err = "third-party + active is not allowed. Switch to passive (↑/↓)"
 		return l, nil
 	}
 	t, err := checker.NewTarget(domain, owner)
@@ -108,12 +119,12 @@ func (l launcherModel) submit() (launcherModel, tea.Cmd) {
 
 func (l launcherModel) View() string {
 	logo := logoStyle.Render("S E C A U D I T")
-	subtitle := faintStyle.Render("passive domain recon")
+	subtitle := faintStyle.Render("terminal domain recon")
 	box := searchBox.Render(l.input.View())
 
 	stack := []string{logo, subtitle, "", box}
 	if l.err != "" {
-		stack = append(stack, "", errStyle.Render("⚠ "+l.err))
+		stack = append(stack, "", errStyle.Render("! "+l.err))
 	}
 	center := lipgloss.JoinVertical(lipgloss.Center, stack...)
 
@@ -127,7 +138,7 @@ func (l launcherModel) View() string {
 
 func (l launcherModel) footer() string {
 	own := "ownership " + chip(ownershipName[l.ownership], true)
-	mode := "mode " + chip(modeName[l.mode], true)
+	mode := "mode " + chip(modeLabel[l.mode], true)
 	keys := footerBar.Render("tab ownership · ↑↓ mode · ↵ scan · esc quit")
 	left := own + "   " + mode
 	gap := l.width - lipgloss.Width(left) - lipgloss.Width(keys) - 2
