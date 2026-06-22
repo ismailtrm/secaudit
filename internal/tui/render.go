@@ -444,7 +444,8 @@ func (m scanModel) maxDetailScroll() int {
 		return 0
 	}
 	i := clampi(p.cursor, 0, len(p.findings)-1)
-	return max(len(m.detailLines(p.findings[i], max(m.width-4, 1)))-detailH, 0)
+	// Width must match detailContent (max(m.width,24)-4) or PgDn over-increments.
+	return max(len(m.detailLines(p.findings[i], max(m.width, 24)-4))-detailH, 0)
 }
 
 // ─── help overlay ────────────────────────────────────────────────────────────

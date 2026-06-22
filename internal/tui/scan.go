@@ -145,6 +145,9 @@ func (m scanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case spinner.TickMsg:
+		if m.done {
+			return m, nil // results screen shows no spinner; stop re-arming the tick
+		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
@@ -313,6 +316,7 @@ func (m *scanModel) applyFilterSort() {
 	for i := range m.panes {
 		m.clampPane(&m.panes[i])
 	}
+	m.detailScroll = 0 // the selected finding may have changed under the filter
 }
 
 func (m *scanModel) sortFindings(fs []checker.Finding) []checker.Finding {
