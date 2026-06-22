@@ -75,18 +75,22 @@ func (crtSh) Run(ctx context.Context, t Target) ([]Finding, error) {
 	}}, nil
 }
 
-// fetchCrtSh queries crt.sh with bounded retries (failures return fast, so this
-// stays well under the engine's per-checker timeout).
+// fetchCrtSh queries crt.sh with bounded retries. crt.sh either fails fast (502)
+// or hangs; a hard total-time budget keeps one flaky service from dominating the
+// whole scan's wall-clock (fast 502s still get retried within the budget).
 func fetchCrtSh(ctx context.Context, domain string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	url := "https://crt.sh/?q=%25." + domain + "&output=json"
-	client := &http.Client{Timeout: 9 * time.Second}
+	client := &http.Client{}
 
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, lastErr
 			case <-time.After(time.Second):
 			}
 		}
@@ -98,6 +102,9 @@ func fetchCrtSh(ctx context.Context, domain string) ([]byte, error) {
 		resp, err := client.Do(req)
 		if err != nil {
 			lastErr = err
+			if ctx.Err() != nil { // total budget exhausted (hang) — stop retrying
+				return nil, lastErr
+			}
 			continue
 		}
 		body, _ := io.ReadAll(resp.Body)
