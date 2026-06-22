@@ -41,16 +41,19 @@ Flags (`scan`):
 
 Reports are written as `report-<domain>-<timestamp>.{md,json}`.
 
-## Checkers (v1, passive)
+## Checkers (passive)
 
 | Checker | What it reports |
 |---|---|
 | `dns.records` | A/AAAA/MX/NS/SOA |
-| `dns.policy` | CAA, SPF, DMARC, MTA-STS, TLS-RPT *(planned)* |
-| `tls.cert` | certificate expiry, SAN, chain, protocol versions *(planned)* |
-| `http.headers` | server banner, redirect chain *(planned)* |
-| `http.secheaders` | CSP/HSTS/X-Frame-Options/Referrer-Policy scoring *(planned)* |
-| `rdap` | registrar, creation/expiry, nameservers, ASN *(planned)* |
+| `dns.policy` | CAA, SPF, DMARC, MTA-STS, TLS-RPT (with quality scoring) |
+| `tls.cert` | certificate expiry, SAN/hostname, chain trust, protocol version |
+| `http.headers` | server banner, redirect chain, CSP/HSTS/X-Frame-Options/Referrer-Policy |
+| `rdap` | registrar, creation/expiry, nameservers, DNSSEC, hosting network |
+| `osint.crtsh` | subdomains from Certificate Transparency logs (cached, retry on 502) |
+
+crt.sh results are cached in a small SQLite TTL store (`~/.config/secaudit/cache.db`)
+so repeated scans don't re-hit the flaky service.
 
 Adding a checker is one file: implement `checker.Checker` and call
 `checker.Register` from an `init()`. The engine and TUI discover it automatically.
