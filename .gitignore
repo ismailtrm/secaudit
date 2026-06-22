@@ -1,0 +1,11 @@
+# build output
+/secaudit
+/dist/
+
+# generated reports
+report-*.md
+report-*.json
+
+# editor / OS
+*.swp
+.DS_Store
