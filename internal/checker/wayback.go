@@ -84,7 +84,7 @@ func fetchWayback(ctx context.Context, domain string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "secaudit/1.0 (+passive recon)")
+	req.Header.Set("User-Agent", userAgent)
 	client := &http.Client{Timeout: 12 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
