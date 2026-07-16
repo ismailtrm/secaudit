@@ -79,7 +79,7 @@ func (wayback) Run(ctx context.Context, t Target) ([]Finding, error) {
 }
 
 func fetchWayback(ctx context.Context, domain string) ([]byte, error) {
-	url := "http://archive.org/wayback/available?url=" + domain
+	url := "https://archive.org/wayback/available?url=" + domain
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

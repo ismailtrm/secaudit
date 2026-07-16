@@ -61,7 +61,13 @@ func probeNames(ctx context.Context, domain string, words []string, conc int) []
 	var wg sync.WaitGroup
 	var found []string
 
+probeLoop:
 	for _, w := range words {
+		select {
+		case <-ctx.Done():
+			break probeLoop
+		default:
+		}
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(w string) {
