@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -17,6 +18,13 @@ import (
 	"github.com/ismailtrm/secaudit/internal/report"
 	"github.com/ismailtrm/secaudit/internal/tui"
 )
+
+// ErrThresholdExceeded is returned (wrapped) by runHeadless when --fail-on is
+// set and the report contains a finding at or above the threshold severity.
+// main.go checks errors.Is against this sentinel to exit 2 without printing
+// the "secaudit:" operational-error prefix: a threshold hit is an intended CI
+// signal, not a failure of the tool itself.
+var ErrThresholdExceeded = errors.New("fail-on threshold exceeded")
 
 // scanCmd is an explicit alias for the bare `secaudit [domain]` form.
 var scanCmd = &cobra.Command{
@@ -46,6 +54,15 @@ func runHeadless(ctx context.Context, domain0 string) error {
 	if strings.TrimSpace(domain0) == "" {
 		return fmt.Errorf("a domain argument is required with --no-tui")
 	}
+	failSev, failEnabled, err := parseFailOn(flagFailOn)
+	if err != nil {
+		return err
+	}
+	streamToStdout := flagOutDir == "-"
+	if streamToStdout && flagFormat != "json" && flagFormat != "md" {
+		return fmt.Errorf("--out - requires --format json or --format md, got --format %s", flagFormat)
+	}
+
 	owner, err := guard.ParseOwnership(flagOwnership)
 	if err != nil {
 		return err
@@ -78,12 +95,44 @@ func runHeadless(ctx context.Context, domain0 string) error {
 		}
 	}
 	rep := report.Build(t, results, started)
-	fmt.Println(rep.Text())
-	paths, err := writeReportFiles(rep)
-	for _, p := range paths {
-		fmt.Println("wrote", p)
+
+	if streamToStdout {
+		var doc []byte
+		if flagFormat == "json" {
+			doc, err = rep.JSON()
+			if err != nil {
+				return fmt.Errorf("failed to render json report: %w", err)
+			}
+		} else {
+			doc = []byte(rep.Markdown())
+		}
+		fmt.Println(string(doc))
+	} else {
+		fmt.Println(rep.Text())
+		paths, werr := writeReportFiles(rep)
+		for _, p := range paths {
+			fmt.Println("wrote", p)
+		}
+		if werr != nil {
+			return werr
+		}
 	}
-	return err
+
+	if failEnabled && reportMeetsThreshold(rep, failSev) {
+		return fmt.Errorf("findings at or above the --fail-on threshold were found: %w", ErrThresholdExceeded)
+	}
+	return nil
+}
+
+// reportMeetsThreshold reports whether rep has at least one finding whose
+// severity is at or above sev.
+func reportMeetsThreshold(rep report.Report, sev checker.Severity) bool {
+	for _, f := range rep.Findings {
+		if f.Severity >= sev {
+			return true
+		}
+	}
+	return false
 }
 
 // writeReport is the tui.WriteFunc: writes the report and returns a status line.
@@ -109,7 +158,7 @@ func writeReportFiles(rep report.Report) ([]string, error) {
 	var paths []string
 	if flagFormat == "both" || flagFormat == "md" {
 		p := base + ".md"
-		if err := os.WriteFile(p, []byte(rep.Markdown()), 0o644); err != nil {
+		if err := os.WriteFile(p, []byte(rep.Markdown()), 0o600); err != nil {
 			return paths, err
 		}
 		paths = append(paths, p)
@@ -120,7 +169,7 @@ func writeReportFiles(rep report.Report) ([]string, error) {
 		if err != nil {
 			return paths, err
 		}
-		if err := os.WriteFile(p, j, 0o644); err != nil {
+		if err := os.WriteFile(p, j, 0o600); err != nil {
 			return paths, err
 		}
 		paths = append(paths, p)
