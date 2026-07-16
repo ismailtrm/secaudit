@@ -79,8 +79,12 @@ func runHeadless(ctx context.Context, domain0 string) error {
 		return err
 	}
 	checkers := checker.ByMode(mode)
+	checkers, err = checker.Filter(checkers, flagOnly, flagSkip)
+	if err != nil {
+		return err
+	}
 	if len(checkers) == 0 {
-		return fmt.Errorf("no checkers registered for mode %s", mode)
+		return fmt.Errorf("no checkers left to run after applying --only/--skip for mode %s", mode)
 	}
 
 	started := time.Now()
@@ -92,6 +96,7 @@ func runHeadless(ctx context.Context, domain0 string) error {
 	for ev := range engine.Run(ctx, t, checkers, opts) {
 		if ev.Result != nil {
 			results = append(results, *ev.Result)
+			printProgress(*ev.Result)
 		}
 	}
 	rep := report.Build(t, results, started)
@@ -122,6 +127,17 @@ func runHeadless(ctx context.Context, domain0 string) error {
 		return fmt.Errorf("findings at or above the --fail-on threshold were found: %w", ErrThresholdExceeded)
 	}
 	return nil
+}
+
+// printProgress writes a one-line, terse progress note to stderr as each
+// checker finishes. It never touches stdout, which must stay clean for
+// `--out -` (stdout carries only the final report).
+func printProgress(res checker.Result) {
+	if res.Skipped {
+		fmt.Fprintf(os.Stderr, "[skip] %s: %s\n", res.CheckerID, res.Reason)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "[done] %s (%d findings)\n", res.CheckerID, len(res.Findings))
 }
 
 // reportMeetsThreshold reports whether rep has at least one finding whose

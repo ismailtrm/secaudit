@@ -17,6 +17,8 @@ var (
 	flagFormat    string
 	flagOutDir    string
 	flagFailOn    string
+	flagOnly      []string
+	flagSkip      []string
 )
 
 var rootCmd = &cobra.Command{
@@ -43,6 +45,8 @@ func init() {
 	pf.StringVar(&flagFormat, "format", "both", "report files to write: both|md|json|none")
 	pf.StringVar(&flagOutDir, "out", ".", "directory for report files")
 	pf.StringVar(&flagFailOn, "fail-on", "none", "headless CI gate: exit 2 if a finding at or above this severity is found: none|info|low|medium|high|critical")
+	pf.StringSliceVar(&flagOnly, "only", nil, "headless only: comma-separated checker IDs to run, e.g. dns.records,tls.cert (repeatable)")
+	pf.StringSliceVar(&flagSkip, "skip", nil, "headless only: comma-separated checker IDs to exclude, e.g. osint.wayback (repeatable)")
 
 	rootCmd.AddCommand(scanCmd, checkersCmd)
 }
