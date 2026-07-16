@@ -44,9 +44,11 @@ jobs:
         run: go test -race -cover ./...
 
       - name: Lint (golangci-lint)
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
+        # Built from source with the runner's Go so the linter's build version
+        # is not older than go.mod's target (a prebuilt binary is compiled with
+        # an older Go and refuses to analyze a newer target). Pinned to the v2
+        # release the .golangci.yml (v2 schema) was validated against.
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run ./...
 
       - name: Vulnerability check (govulncheck)
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
