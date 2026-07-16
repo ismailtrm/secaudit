@@ -51,9 +51,25 @@ Flags:
 | `--mode` | `passive` | `passive`, `active` |
 | `--no-tui` | `false` | headless mode |
 | `--format` | `both` | `both`, `md`, `json`, `none` |
-| `--out` | `.` | output directory for report files |
+| `--out` | `.` | output directory, or `-` to stream one report to stdout |
+| `--fail-on` | `none` | `none`, `info`, `low`, `medium`, `high`, `critical` |
+| `--only` | (all) | comma-separated checker IDs to run |
+| `--skip` | (none) | comma-separated checker IDs to exclude |
 
-Reports are written as `report-<domain>-<timestamp>.{md,json}`.
+Reports are written as `report-<domain>-<timestamp>.{md,json}` (mode `0600`).
+
+The headless flags make secaudit usable as a CI gate:
+
+```sh
+# fail the pipeline (exit 2) if any HIGH+ finding appears; clean JSON to stdout
+secaudit example.com --no-tui --format json --out - --fail-on high | jq .score
+# run a focused subset; progress goes to stderr, report to stdout
+secaudit example.com --no-tui --only tls.cert,dns.policy --format json --out -
+```
+
+`--fail-on`, `--only`, `--skip`, and `--out -` apply to the headless path only
+(the interactive TUI ignores them). Progress lines are written to stderr, so
+stdout stays clean for piping.
 
 ## Checkers (passive)
 
@@ -61,13 +77,17 @@ Reports are written as `report-<domain>-<timestamp>.{md,json}`.
 |---|---|
 | `dns.records` | A/AAAA/MX/NS/SOA |
 | `dns.policy` | CAA, SPF, DMARC, MTA-STS, TLS-RPT (with quality scoring) |
-| `tls.cert` | certificate expiry, SAN/hostname, chain trust, protocol version |
-| `http.headers` | server banner, redirect chain, CSP/HSTS/X-Frame-Options/Referrer-Policy |
+| `tls.cert` | expiry, SAN/hostname, chain trust, protocol version, weak signature (SHA-1) / key (RSA<2048), self-signed, obsolete TLS 1.0/1.1 support |
+| `http.headers` | server banner, redirect chain, CSP/HSTS quality, cookie flags (Secure/HttpOnly/SameSite), Permissions-Policy, COOP/CORP, X-Frame-Options, Referrer-Policy |
 | `rdap` | registrar, creation/expiry, nameservers, hosting network |
 | `dns.dnssec` | live DNSSEC: DS at parent + DNSKEY/RRSIG at apex (chain of trust) |
 | `dns.subdomains` | wordlist probe of common labels (with wildcard-DNS detection) |
+| `dns.takeover` | dangling-CNAME subdomain takeover detection (fingerprints GitHub Pages, S3, Heroku, Azure, ...) |
+| `dns.axfr` | zone-transfer (AXFR) attempt against each authoritative NS |
+| `http.securitytxt` | `/.well-known/security.txt` presence (RFC 9116) |
 | `osint.crtsh` | subdomains from Certificate Transparency logs (cached, retry on 502) |
 | `osint.wayback` | Internet Archive snapshot availability (cached) |
+| `osint.internetdb` | Shodan InternetDB: last-known open ports + CVEs for the apex IP (keyless, no active probing) |
 
 crt.sh and Wayback results are cached in a small SQLite TTL store
 (`~/.config/secaudit/cache.db`) so repeated scans don't re-hit flaky services.
@@ -107,3 +127,16 @@ internal/
   cache/        SQLite TTL cache
   config/       on-disk paths
 ```
+
+## Development
+
+```sh
+make build      # go build ./...
+make test       # go test -race -cover ./...
+make lint       # golangci-lint run
+make vuln       # govulncheck ./...
+make ci         # build + vet + fmt-check + test
+```
+
+CI (`.github/workflows/ci.yml`) runs build, vet, gofmt check, `test -race`,
+golangci-lint, and govulncheck on every push and pull request.
