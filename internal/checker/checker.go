@@ -8,6 +8,10 @@ package checker
 
 import "context"
 
+// userAgent identifies secaudit's outbound HTTP requests (crt.sh, Wayback,
+// InternetDB, security.txt, takeover probes). Single source for the version.
+const userAgent = "secaudit/1.0 (+passive recon)"
+
 // Mode classifies a checker by how intrusive it is against the target.
 type Mode uint8
 

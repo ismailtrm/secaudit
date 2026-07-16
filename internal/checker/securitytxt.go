@@ -93,7 +93,7 @@ func getSecurityTxtURL(ctx context.Context, client *http.Client, url string) (st
 	if err != nil {
 		return "", 0, fmt.Errorf("build request for %s: %w", url, err)
 	}
-	req.Header.Set("User-Agent", "secaudit/1.0 (+passive recon)")
+	req.Header.Set("User-Agent", userAgent)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", 0, fmt.Errorf("fetch %s: %w", url, err)

@@ -84,7 +84,7 @@ func fetchInternetDB(ctx context.Context, ip string) (internetDBResult, int, err
 	if err != nil {
 		return internetDBResult{}, 0, fmt.Errorf("build internetdb request: %w", err)
 	}
-	req.Header.Set("User-Agent", "secaudit/1.0 (+passive recon)")
+	req.Header.Set("User-Agent", userAgent)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)

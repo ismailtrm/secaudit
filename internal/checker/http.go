@@ -235,7 +235,7 @@ func fetch(ctx context.Context, client *http.Client, host string) (*http.Respons
 		if err != nil {
 			return nil, "", err
 		}
-		req.Header.Set("User-Agent", "secaudit/1.0 (+passive recon)")
+		req.Header.Set("User-Agent", userAgent)
 		resp, err := client.Do(req)
 		if err == nil {
 			return resp, scheme, nil
