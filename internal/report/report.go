@@ -12,16 +12,17 @@ import (
 
 // Report is the aggregate output of one scan.
 type Report struct {
-	Domain    string            `json:"domain"`
-	Host      string            `json:"host"`
-	Ownership string            `json:"ownership"`
-	Mode      string            `json:"mode"`
-	StartedAt time.Time         `json:"started_at"`
-	Duration  time.Duration     `json:"duration_ns"`
-	Score     int               `json:"score"` // 0-100, higher is healthier
-	Counts    map[string]int    `json:"counts"`
-	Findings  []checker.Finding `json:"findings"` // flattened, severity-sorted
-	Results   []checker.Result  `json:"results"`  // per-checker, incl. skipped
+	SchemaVersion string            `json:"schema_version"`
+	Domain        string            `json:"domain"`
+	Host          string            `json:"host"`
+	Ownership     string            `json:"ownership"`
+	Mode          string            `json:"mode"`
+	StartedAt     time.Time         `json:"started_at"`
+	Duration      time.Duration     `json:"duration_ns"`
+	Score         int               `json:"score"` // 0-100, higher is healthier
+	Counts        map[string]int    `json:"counts"`
+	Findings      []checker.Finding `json:"findings"` // flattened, severity-sorted
+	Results       []checker.Result  `json:"results"`  // per-checker, incl. skipped
 }
 
 // severityPenalty is subtracted from a starting score of 100 per finding.
@@ -36,13 +37,14 @@ var severityPenalty = map[checker.Severity]int{
 // Build aggregates results into a Report. started is the scan start time.
 func Build(t checker.Target, results []checker.Result, started time.Time) Report {
 	r := Report{
-		Domain:    t.Domain,
-		Host:      t.Host,
-		Ownership: t.Ownership.String(),
-		StartedAt: started,
-		Duration:  time.Since(started),
-		Counts:    map[string]int{},
-		Results:   results,
+		SchemaVersion: "1",
+		Domain:        t.Domain,
+		Host:          t.Host,
+		Ownership:     t.Ownership.String(),
+		StartedAt:     started,
+		Duration:      time.Since(started),
+		Counts:        map[string]int{},
+		Results:       results,
 	}
 
 	r.Mode = "passive"
