@@ -19,7 +19,8 @@ func TestNewTarget(t *testing.T) {
 		{"1.2.3.4", "", "", true},         // IPs rejected
 		{"", "", "", true},                // empty rejected
 		{"-oG.example.com", "", "", true}, // leading-hyphen host rejected (arg-injection guard)
-		{"münchen.de", "xn--mnchen-3ya.de", "xn--mnchen-3ya.de", false}, // IDN → punycode
+		// münchen.de: IDN → punycode
+		{"münchen.de", "xn--mnchen-3ya.de", "xn--mnchen-3ya.de", false},
 	}
 	for _, tc := range tests {
 		got, err := NewTarget(tc.raw, Own)
@@ -52,7 +53,7 @@ func TestSPFQuality(t *testing.T) {
 		{"v=spf1 a mx", SevInfo},
 	}
 	for _, tc := range tests {
-		if sev, _ := spfQuality(tc.spf); sev != tc.sev {
+		if sev, _, _ := spfQuality(tc.spf); sev != tc.sev {
 			t.Errorf("spfQuality(%q) = %v, want %v", tc.spf, sev, tc.sev)
 		}
 	}
@@ -69,7 +70,7 @@ func TestDMARCQuality(t *testing.T) {
 		{"v=DMARC1", SevLow},
 	}
 	for _, tc := range tests {
-		if sev, _ := dmarcQuality(tc.dmarc); sev != tc.sev {
+		if sev, _, _ := dmarcQuality(tc.dmarc); sev != tc.sev {
 			t.Errorf("dmarcQuality(%q) = %v, want %v", tc.dmarc, sev, tc.sev)
 		}
 	}

@@ -60,6 +60,21 @@ func (httpHeaders) Run(ctx context.Context, t Target) ([]Finding, error) {
 		fmt.Sprintf("%s (HTTP %d)", banner, resp.StatusCode),
 		map[string]any{"server": server, "x_powered_by": powered, "status": resp.StatusCode}))
 
+	// Passive technology fingerprint from the same response.
+	tech, versions := fingerprint(resp.Header, resp.Cookies())
+	if len(tech) > 0 {
+		findings = append(findings, add(SevInfo, "Technology fingerprint",
+			strings.Join(tech, ", "),
+			map[string]any{"tech": tech, "versions": versions}))
+	}
+	if len(versions) > 0 {
+		f := add(SevLow, "Version disclosed in HTTP banner",
+			strings.Join(versions, ", "),
+			map[string]any{"versions": versions})
+		f.Detail, f.Refs = fix("version-disclosure", t.Domain)
+		findings = append(findings, f)
+	}
+
 	// Redirect chain / HTTPS reachability.
 	if scheme == "http" {
 		findings = append(findings, add(SevMedium, "No HTTPS",

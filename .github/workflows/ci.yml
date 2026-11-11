@@ -3,13 +3,18 @@ name: CI
 on:
   push:
     branches:
-      - "**"
+      - main
   pull_request:
-    branches:
-      - "**"
 
 permissions:
   contents: read
+
+# Cancel an in-progress run when a newer commit is pushed to the same branch
+# or PR, so superseded runs don't keep burning runner minutes. Pushing a branch
+# runs CI only on main or when it has an open PR (avoids the push+PR double run).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
@@ -22,7 +27,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          # Install the latest 1.26 patch on every run (not the exact patch
+          # pinned in go.mod) so govulncheck always sees an up-to-date stdlib.
+          # go-version-file would install go.mod's exact patch, which goes
+          # stale: the next stdlib advisory lands a patch ahead and CI goes red
+          # until someone bumps go.mod by hand. go.mod's `go` line stays a floor.
+          go-version: "1.26.x"
+          check-latest: true
           cache: true
 
       - name: Build
@@ -51,4 +62,4 @@ jobs:
         run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run ./...
 
       - name: Vulnerability check (govulncheck)
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...

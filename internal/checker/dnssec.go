@@ -2,6 +2,7 @@ package checker
 
 import (
 	"context"
+	"errors"
 
 	"github.com/miekg/dns"
 )
@@ -20,31 +21,38 @@ func (dnssecCheck) Mode() Mode                               { return Passive }
 func (dnssecCheck) Available(context.Context) (bool, string) { return true, "" }
 
 func (dnssecCheck) Run(ctx context.Context, t Target) ([]Finding, error) {
-	one := func(sev Severity, title, summary string) []Finding {
+	one := func(sev Severity, title, summary, fixKey string) []Finding {
+		d, refs := fix(fixKey, t.Domain)
 		return []Finding{{CheckerID: "dns.dnssec", Category: CatDNS, Severity: sev,
-			Title: title, Summary: summary}}
+			Title: title, Summary: summary, Detail: d, Refs: refs}}
 	}
 
-	dsRRs, _ := queryDNS(ctx, t.Domain, dns.TypeDS)
+	dsRRs, dsErr := queryDNS(ctx, t.Domain, dns.TypeDS)
 	hasDS := hasRRType(dsRRs, dns.TypeDS)
 
-	keyRRs, _ := queryDNS(ctx, t.Domain, dns.TypeDNSKEY)
+	keyRRs, keyErr := queryDNS(ctx, t.Domain, dns.TypeDNSKEY)
 	hasKey := hasRRType(keyRRs, dns.TypeDNSKEY)
 
-	soaRRs, _ := queryWithDNSSEC(ctx, t.Domain, dns.TypeSOA)
+	soaRRs, sigErr := queryWithDNSSEC(ctx, t.Domain, dns.TypeSOA)
 	hasSig := hasRRType(soaRRs, dns.TypeRRSIG)
 	signed := hasKey && hasSig
 
+	if dsErr != nil || keyErr != nil || sigErr != nil {
+		f := one(SevInfo, "DNSSEC: lookup inconclusive", "DNS query failed - could not determine", "")
+		f[0].Err = errors.Join(dsErr, keyErr, sigErr).Error()
+		return f, nil
+	}
+
 	switch {
 	case signed && hasDS:
-		return one(SevInfo, "DNSSEC enabled", "signed zone with DS at parent: chain of trust intact"), nil
+		return one(SevInfo, "DNSSEC enabled", "signed zone with DS at parent: chain of trust intact", ""), nil
 	case signed && !hasDS:
 		return one(SevLow, "DNSSEC chain incomplete",
-			"zone is signed (DNSKEY+RRSIG) but no DS at the registry: resolvers can't validate it"), nil
+			"zone is signed (DNSKEY+RRSIG) but no DS at the registry: resolvers can't validate it", "dnssec-incomplete"), nil
 	case hasDS && !signed:
 		return one(SevLow, "DNSSEC inconsistent",
-			"DS present at parent but the zone is not serving signatures"), nil
+			"DS present at parent but the zone is not serving signatures", "dnssec-inconsistent"), nil
 	default:
-		return one(SevLow, "DNSSEC not enabled", "zone is unsigned: DNS responses can be spoofed"), nil
+		return one(SevLow, "DNSSEC not enabled", "zone is unsigned: DNS responses can be spoofed", "dnssec-off"), nil
 	}
 }
