@@ -79,3 +79,15 @@ func fingerprint(h http.Header, cookies []*http.Cookie) (tech []string, versions
 	sort.Strings(versions)
 	return tech, versions
 }
+
+// bannerProducts returns the lowercased product and version of every
+// product/version pair disclosed in the Server / X-Powered-By headers.
+func bannerProducts(h http.Header) []struct{ Product, Version string } {
+	var out []struct{ Product, Version string }
+	for _, name := range []string{"Server", "X-Powered-By"} {
+		for _, m := range bannerVersion.FindAllStringSubmatch(h.Get(name), -1) {
+			out = append(out, struct{ Product, Version string }{strings.ToLower(m[1]), m[2]})
+		}
+	}
+	return out
+}
