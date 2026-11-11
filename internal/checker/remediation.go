@@ -53,6 +53,10 @@ var remedies = map[string]remedy{
 		"The zone is signed but has no DS record at the registry, so resolvers cannot validate it. Add the DS record (derived from the zone's DNSKEY) at the registrar for {{domain}}.",
 		[]string{"https://www.rfc-editor.org/rfc/rfc9364"},
 	},
+	"version-disclosure": {
+		"The Server and X-Powered-By headers expose exact software versions, which lets attackers match the target to known CVEs. Suppress version tokens: nginx `server_tokens off;`, Apache `ServerTokens Prod` and `ServerSignature Off`, and remove `X-Powered-By` (for example PHP `expose_php = Off`).",
+		nil,
+	},
 	"dnssec-inconsistent": {
 		"A DS record exists at the registry but the zone is not serving signatures, which breaks validation. Either re-sign the zone or remove the stale DS record at the registrar for {{domain}}.",
 		[]string{"https://www.rfc-editor.org/rfc/rfc9364"},
