@@ -37,10 +37,13 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 		})
 	}
 
+	var spfPresent, dmarcEnforced bool
+
 	// --- SPF (TXT on apex) ---
 	if spf, err := firstWithPrefix(ctx, t.Domain, "v=spf1"); err != nil {
 		inconclusive(CatEmail, "SPF: lookup inconclusive", err)
 	} else if spf != "" {
+		spfPresent = true
 		sev, note := spfQuality(spf)
 		add(CatEmail, sev, "SPF record", note, map[string]any{"spf": spf})
 	} else {
@@ -52,11 +55,28 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 	if dmarc, err := firstWithPrefix(ctx, "_dmarc."+t.Domain, "v=DMARC1"); err != nil {
 		inconclusive(CatEmail, "DMARC: lookup inconclusive", err)
 	} else if dmarc != "" {
+		switch strings.ToLower(tagValue(dmarc, "p")) {
+		case "reject", "quarantine":
+			dmarcEnforced = true
+		}
 		sev, note := dmarcQuality(dmarc)
 		add(CatEmail, sev, "DMARC record", note, map[string]any{"dmarc": dmarc})
 	} else {
 		add(CatEmail, SevMedium, "No DMARC record",
 			"no policy telling receivers how to handle spoofed mail", map[string]any{"domain": t.Domain})
+	}
+
+	if spfPresent && !dmarcEnforced {
+		findings = append(findings, Finding{
+			CheckerID: "dns.policy", Category: CatEmail, Severity: SevLow,
+			Title:   "SPF without enforced DMARC: From-header spoofing still possible",
+			Summary: "SPF protects the envelope only; without DMARC p=reject/quarantine, a forged visible From: @" + t.Domain + " is not rejected",
+			Detail: "SPF validates the SMTP envelope (MAIL FROM), not the visible `From:` header that users see. " +
+				"The visible From header is only checked through DMARC alignment. With DMARC absent or `p=none`, " +
+				"a message spoofing the visible From address can still be delivered even though SPF is strict.\n\n" +
+				"Recommendation: publish DMARC with `p=reject` after a `p=none` monitoring phase.",
+			Refs: []string{"https://www.rfc-editor.org/rfc/rfc7489"},
+		})
 	}
 
 	// --- CAA (apex) ---
