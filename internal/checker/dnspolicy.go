@@ -29,6 +29,14 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 		})
 	}
 
+	addFix := func(cat Category, sev Severity, title, summary, fixKey string, ev map[string]any) {
+		d, refs := fix(fixKey, t.Domain)
+		findings = append(findings, Finding{
+			CheckerID: "dns.policy", Category: cat, Severity: sev,
+			Title: title, Summary: summary, Detail: d, Refs: refs, Evidence: ev,
+		})
+	}
+
 	inconclusive := func(cat Category, title string, err error) {
 		findings = append(findings, Finding{
 			CheckerID: "dns.policy", Category: cat, Severity: SevInfo,
@@ -44,11 +52,11 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 		inconclusive(CatEmail, "SPF: lookup inconclusive", err)
 	} else if spf != "" {
 		spfPresent = true
-		sev, note := spfQuality(spf)
-		add(CatEmail, sev, "SPF record", note, map[string]any{"spf": spf})
+		sev, note, fixKey := spfQuality(spf)
+		addFix(CatEmail, sev, "SPF record", note, fixKey, map[string]any{"spf": spf})
 	} else {
-		add(CatEmail, SevMedium, "No SPF record",
-			"domain can be more easily spoofed in SMTP envelope", map[string]any{"domain": t.Domain})
+		addFix(CatEmail, SevMedium, "No SPF record",
+			"domain can be more easily spoofed in SMTP envelope", "no-spf", map[string]any{"domain": t.Domain})
 	}
 
 	// --- DMARC (TXT at _dmarc) ---
@@ -59,11 +67,11 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 		case "reject", "quarantine":
 			dmarcEnforced = true
 		}
-		sev, note := dmarcQuality(dmarc)
-		add(CatEmail, sev, "DMARC record", note, map[string]any{"dmarc": dmarc})
+		sev, note, fixKey := dmarcQuality(dmarc)
+		addFix(CatEmail, sev, "DMARC record", note, fixKey, map[string]any{"dmarc": dmarc})
 	} else {
-		add(CatEmail, SevMedium, "No DMARC record",
-			"no policy telling receivers how to handle spoofed mail", map[string]any{"domain": t.Domain})
+		addFix(CatEmail, SevMedium, "No DMARC record",
+			"no policy telling receivers how to handle spoofed mail", "no-dmarc", map[string]any{"domain": t.Domain})
 	}
 
 	if spfPresent && !dmarcEnforced {
@@ -85,8 +93,8 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 	} else if len(caa) > 0 {
 		add(CatTLS, SevInfo, "CAA record", strings.Join(caa, ", "), map[string]any{"caa": caa})
 	} else {
-		add(CatTLS, SevLow, "No CAA record",
-			"any CA may issue certificates for this domain", map[string]any{"domain": t.Domain})
+		addFix(CatTLS, SevLow, "No CAA record",
+			"any CA may issue certificates for this domain", "no-caa", map[string]any{"domain": t.Domain})
 	}
 
 	// --- MTA-STS (TXT at _mta-sts) ---
@@ -95,7 +103,7 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 	} else if sts != "" {
 		add(CatEmail, SevInfo, "MTA-STS enabled", sts, map[string]any{"mta_sts": sts})
 	} else {
-		add(CatEmail, SevInfo, "No MTA-STS", "SMTP TLS not enforced via MTA-STS", nil)
+		addFix(CatEmail, SevInfo, "No MTA-STS", "SMTP TLS not enforced via MTA-STS", "no-mta-sts", nil)
 	}
 
 	// --- TLS-RPT (TXT at _smtp._tls) ---
@@ -123,34 +131,34 @@ func firstWithPrefix(ctx context.Context, name, prefix string) (string, error) {
 }
 
 // spfQuality rates an SPF record by its terminating "all" mechanism.
-func spfQuality(spf string) (Severity, string) {
+func spfQuality(spf string) (Severity, string, string) {
 	low := strings.ToLower(spf)
 	switch {
 	case strings.Contains(low, "+all"):
-		return SevHigh, "+all permits any sender: SPF provides no protection"
+		return SevHigh, "+all permits any sender: SPF provides no protection", "spf-weak"
 	case strings.Contains(low, "-all"):
-		return SevInfo, "-all (hard fail): strict, recommended"
+		return SevInfo, "-all (hard fail): strict, recommended", ""
 	case strings.Contains(low, "~all"):
-		return SevLow, "~all (soft fail): consider tightening to -all"
+		return SevLow, "~all (soft fail): consider tightening to -all", "spf-soften"
 	case strings.Contains(low, "?all"):
-		return SevLow, "?all (neutral): provides little protection"
+		return SevLow, "?all (neutral): provides little protection", "spf-soften"
 	default:
-		return SevInfo, "SPF present"
+		return SevInfo, "SPF present", ""
 	}
 }
 
 // dmarcQuality rates a DMARC record by its policy.
-func dmarcQuality(dmarc string) (Severity, string) {
+func dmarcQuality(dmarc string) (Severity, string, string) {
 	p := tagValue(dmarc, "p")
 	switch strings.ToLower(p) {
 	case "reject":
-		return SevInfo, "p=reject: strongest policy"
+		return SevInfo, "p=reject: strongest policy", ""
 	case "quarantine":
-		return SevInfo, "p=quarantine: spoofed mail sent to spam"
+		return SevInfo, "p=quarantine: spoofed mail sent to spam", ""
 	case "none":
-		return SevLow, "p=none: monitoring only, no enforcement"
+		return SevLow, "p=none: monitoring only, no enforcement", "dmarc-none"
 	default:
-		return SevLow, "DMARC present but policy unclear"
+		return SevLow, "DMARC present but policy unclear", "dmarc-unclear"
 	}
 }
 

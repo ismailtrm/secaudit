@@ -52,7 +52,7 @@ func TestSPFQuality(t *testing.T) {
 		{"v=spf1 a mx", SevInfo},
 	}
 	for _, tc := range tests {
-		if sev, _ := spfQuality(tc.spf); sev != tc.sev {
+		if sev, _, _ := spfQuality(tc.spf); sev != tc.sev {
 			t.Errorf("spfQuality(%q) = %v, want %v", tc.spf, sev, tc.sev)
 		}
 	}
@@ -69,7 +69,7 @@ func TestDMARCQuality(t *testing.T) {
 		{"v=DMARC1", SevLow},
 	}
 	for _, tc := range tests {
-		if sev, _ := dmarcQuality(tc.dmarc); sev != tc.sev {
+		if sev, _, _ := dmarcQuality(tc.dmarc); sev != tc.sev {
 			t.Errorf("dmarcQuality(%q) = %v, want %v", tc.dmarc, sev, tc.sev)
 		}
 	}

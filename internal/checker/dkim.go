@@ -79,11 +79,13 @@ func (dkimCheck) Run(ctx context.Context, t Target) ([]Finding, error) {
 			Err:     errors.Join(errs...).Error(),
 		}}, nil
 	}
+	detail, refs := fix("no-dkim", t.Domain)
 	return []Finding{{
 		CheckerID: "dns.dkim", Category: CatEmail, Severity: SevInfo,
 		Title: "No common DKIM selector found",
 		Summary: fmt.Sprintf("probed %d common selectors; the domain may still sign with a custom selector not covered here",
 			len(dkimSelectors)),
+		Detail: detail, Refs: refs,
 	}}, nil
 }
 
