@@ -46,6 +46,31 @@ func TestFingerprint(t *testing.T) {
 			wantVersions: []string{},
 		},
 		{
+			name:         "parenthesized comment stripped",
+			headers:      map[string]string{"Server": "Apache/2.4.41 (Ubuntu)"},
+			wantTech:     []string{"Apache"},
+			wantVersions: []string{"Apache/2.4.41"},
+		},
+		{
+			name:         "hostname-style value has no version",
+			headers:      map[string]string{"Server": "github.com"},
+			wantTech:     []string{},
+			wantVersions: []string{},
+		},
+		{
+			name:         "parenthesized token ignored",
+			headers:      map[string]string{"Server": "ECS (nyb/1D2E)"},
+			wantTech:     []string{},
+			wantVersions: []string{},
+		},
+		{
+			name:         "case-insensitive tech dedup",
+			headers:      map[string]string{"X-Generator": "wordpress"},
+			cookies:      []*http.Cookie{{Name: "wordpress_logged_in_abc", Value: "x"}},
+			wantTech:     []string{"WordPress"},
+			wantVersions: []string{},
+		},
+		{
 			name:         "no signals",
 			wantTech:     []string{},
 			wantVersions: []string{},

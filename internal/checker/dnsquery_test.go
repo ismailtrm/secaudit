@@ -381,3 +381,24 @@ func TestDNSSECInconclusive(t *testing.T) {
 		t.Errorf("unexpected findings: %+v", fs)
 	}
 }
+
+func TestPolicyNoCorrelationOnDMARCFailure(t *testing.T) {
+	r1 := startStub(t, func(w dns.ResponseWriter, r *dns.Msg) {
+		if strings.HasPrefix(r.Question[0].Name, "_dmarc.") {
+			reply(t, w, r, dns.RcodeServerFailure, false, "")
+			return
+		}
+		reply(t, w, r, dns.RcodeSuccess, false, "v=spf1 -all")
+	}, nil)
+	overrideResolvers(t, []string{r1}, []string{failingDoH(t)})
+	fs, err := dnsPolicy{}.Run(context.Background(), Target{Domain: "example.com", Host: "www.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasTitle(fs, "DMARC: lookup inconclusive") {
+		t.Errorf("missing DMARC inconclusive finding: %+v", fs)
+	}
+	if hasTitle(fs, "SPF without enforced DMARC: From-header spoofing still possible") {
+		t.Error("correlation finding emitted despite DMARC lookup failure")
+	}
+}

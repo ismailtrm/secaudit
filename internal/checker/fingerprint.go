@@ -9,7 +9,14 @@ import (
 
 // bannerVersion extracts "product/version" pairs (e.g. nginx/1.18.0, PHP/7.4.3)
 // from Server / X-Powered-By style values.
-var bannerVersion = regexp.MustCompile(`([A-Za-z][A-Za-z0-9._+-]*)/(\d[A-Za-z0-9._+-]*)`)
+var bannerVersion = regexp.MustCompile(`([A-Za-z][A-Za-z0-9._+-]*)/(\d+(?:\.\d+)+)`)
+
+// parenSegment matches parenthesized banner comments such as "(Ubuntu)".
+var parenSegment = regexp.MustCompile(`\([^)]*\)`)
+
+func bannerMatches(h http.Header, name string) [][]string {
+	return bannerVersion.FindAllStringSubmatch(parenSegment.ReplaceAllString(h.Get(name), " "), -1)
+}
 
 // cookieTech maps a lowercased cookie-name substring to the technology it implies.
 var cookieTech = map[string]string{
@@ -41,34 +48,40 @@ var headerTech = map[string]string{
 // technologies (sorted, de-duplicated) and the product/version pairs disclosed
 // in the Server / X-Powered-By headers.
 func fingerprint(h http.Header, cookies []*http.Cookie) (tech []string, versions []string) {
-	techSet := map[string]bool{}
+	techSet := map[string]string{} // lowercased key -> display form
+	addTech := func(t string) {
+		k := strings.ToLower(t)
+		if cur, ok := techSet[k]; !ok || t < cur {
+			techSet[k] = t
+		}
+	}
 	verSet := map[string]bool{}
 
 	for _, name := range []string{"Server", "X-Powered-By"} {
-		for _, m := range bannerVersion.FindAllStringSubmatch(h.Get(name), -1) {
-			techSet[m[1]] = true
+		for _, m := range bannerMatches(h, name) {
+			addTech(m[1])
 			verSet[m[1]+"/"+m[2]] = true
 		}
 	}
 	for name, t := range headerTech {
 		if h.Get(name) != "" {
-			techSet[t] = true
+			addTech(t)
 		}
 	}
 	if g := strings.TrimSpace(h.Get("X-Generator")); g != "" {
-		techSet[g] = true
+		addTech(g)
 	}
 	for _, c := range cookies {
 		lower := strings.ToLower(c.Name)
 		for sub, t := range cookieTech {
 			if strings.Contains(lower, sub) {
-				techSet[t] = true
+				addTech(t)
 			}
 		}
 	}
 
 	tech = make([]string, 0, len(techSet))
-	for k := range techSet {
+	for _, k := range techSet {
 		tech = append(tech, k)
 	}
 	versions = make([]string, 0, len(verSet))
@@ -85,7 +98,7 @@ func fingerprint(h http.Header, cookies []*http.Cookie) (tech []string, versions
 func bannerProducts(h http.Header) []struct{ Product, Version string } {
 	var out []struct{ Product, Version string }
 	for _, name := range []string{"Server", "X-Powered-By"} {
-		for _, m := range bannerVersion.FindAllStringSubmatch(h.Get(name), -1) {
+		for _, m := range bannerMatches(h, name) {
 			out = append(out, struct{ Product, Version string }{strings.ToLower(m[1]), m[2]})
 		}
 	}

@@ -62,23 +62,34 @@ func (cveCheck) Run(ctx context.Context, t Target) ([]Finding, error) {
 	resp, _, err := fetch(ctx, client, t.Host)
 	if err != nil {
 		return []Finding{{CheckerID: "vuln.cve", Category: CatVuln, Severity: SevInfo,
-			Title: "CVE lookup skipped: host unreachable over HTTP(S)"}}, nil
+			Title: "CVE lookup skipped: host unreachable over HTTP(S)", Err: err.Error()}}, nil
 	}
 	defer resp.Body.Close()
 	return cveFindings(ctx, bannerProducts(resp.Header)), nil
 }
 
 type nvdResponse struct {
+	TotalResults    int `json:"totalResults"`
 	Vulnerabilities []struct {
 		CVE nvdCVE `json:"cve"`
 	} `json:"vulnerabilities"`
 }
+
+// nvdResult is one product's NVD lookup: the CVEs returned plus the total NVD
+// lists, so callers can tell when the first page was truncated.
+type nvdResult struct {
+	CVEs  []nvdCVE
+	Total int
+}
+
+func (r nvdResult) truncated() bool { return r.Total > len(r.CVEs) }
 
 type nvdCVE struct {
 	ID      string `json:"id"`
 	Metrics struct {
 		V31 []nvdMetric `json:"cvssMetricV31"`
 		V30 []nvdMetric `json:"cvssMetricV30"`
+		V40 []nvdMetric `json:"cvssMetricV40"`
 		V2  []nvdMetric `json:"cvssMetricV2"`
 	} `json:"metrics"`
 	Configurations []struct {
@@ -89,6 +100,7 @@ type nvdCVE struct {
 }
 
 type nvdMetric struct {
+	Type     string `json:"type"`
 	CVSSData struct {
 		BaseScore float64 `json:"baseScore"`
 	} `json:"cvssData"`
@@ -103,12 +115,19 @@ type nvdCPEMatch struct {
 	VersionEndExcluding   string `json:"versionEndExcluding"`
 }
 
-// score returns the best available CVSS base score (V3.1, V3.0, then V2).
+// score returns the best available CVSS base score (V3.1, V3.0, V4.0, then V2),
+// preferring the NVD "Primary" entry within the chosen metric list.
 func (c nvdCVE) score() float64 {
-	for _, ms := range [][]nvdMetric{c.Metrics.V31, c.Metrics.V30, c.Metrics.V2} {
-		if len(ms) > 0 {
-			return ms[0].CVSSData.BaseScore
+	for _, ms := range [][]nvdMetric{c.Metrics.V31, c.Metrics.V30, c.Metrics.V40, c.Metrics.V2} {
+		if len(ms) == 0 {
+			continue
 		}
+		for _, m := range ms {
+			if m.Type == "Primary" {
+				return m.CVSSData.BaseScore
+			}
+		}
+		return ms[0].CVSSData.BaseScore
 	}
 	return 0
 }
@@ -125,21 +144,30 @@ func cveFindings(ctx context.Context, pairs []struct{ Product, Version string })
 	var hits []cveHit
 	var errs []error
 	seen := map[string]bool{}
+	hitSeen := map[string]bool{}
+	var truncs []Finding
 	for _, p := range pairs {
 		cpe, ok := cpeMap[p.Product]
 		if !ok || seen[p.Product+"/"+p.Version] {
 			continue
 		}
 		seen[p.Product+"/"+p.Version] = true
-		cves, err := nvdLookup(ctx, cpe)
+		res, err := nvdLookup(ctx, cpe)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", p.Product, err))
 			continue
 		}
-		for _, c := range cves {
-			if cveApplies(c, cpe, p.Version) {
-				hits = append(hits, cveHit{p.Product, p.Version, c.ID, c.score()})
+		if res.truncated() {
+			truncs = append(truncs, Finding{CheckerID: "vuln.cve", Category: CatVuln, Severity: SevInfo,
+				Title:   "CVE list incomplete for " + p.Product,
+				Summary: fmt.Sprintf("NVD lists %d CVEs; only the first 2000 were checked", res.Total)})
+		}
+		for _, c := range res.CVEs {
+			if !cveApplies(c, cpe, p.Version) || hitSeen[c.ID+"/"+p.Version] {
+				continue
 			}
+			hitSeen[c.ID+"/"+p.Version] = true
+			hits = append(hits, cveHit{p.Product, p.Version, c.ID, c.score()})
 		}
 	}
 
@@ -159,6 +187,7 @@ func cveFindings(ctx context.Context, pairs []struct{ Product, Version string })
 			Refs:     []string{"https://nvd.nist.gov/vuln/detail/" + h.id},
 			Evidence: map[string]any{"product": h.product, "version": h.version, "cve": h.id, "cvss": h.score}})
 	}
+	out = append(out, truncs...)
 	if len(errs) > 0 {
 		out = append(out, Finding{CheckerID: "vuln.cve", Category: CatVuln, Severity: SevInfo,
 			Title: "CVE lookup inconclusive", Summary: "NVD query failed - could not determine",
@@ -182,7 +211,7 @@ func cvssSeverity(score float64) Severity {
 
 // nvdLookup returns the CVEs NVD lists for a "<vendor>:<product>" CPE prefix,
 // served from the cache when fresh. Only successful responses are cached.
-func nvdLookup(ctx context.Context, cpe string) ([]nvdCVE, error) {
+func nvdLookup(ctx context.Context, cpe string) (nvdResult, error) {
 	key := "nvd:" + cpe
 	c := cveCache()
 	var body []byte
@@ -191,13 +220,14 @@ func nvdLookup(ctx context.Context, cpe string) ([]nvdCVE, error) {
 			body = b
 		}
 	}
-	if body == nil {
+	fresh := body == nil
+	if fresh {
 		q := url.Values{}
 		q.Set("virtualMatchString", "cpe:2.3:a:"+cpe)
 		q.Set("resultsPerPage", "2000")
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, nvdBaseURL+"?"+q.Encode(), nil)
 		if err != nil {
-			return nil, err
+			return nvdResult{}, fmt.Errorf("NVD request build: %w", err)
 		}
 		req.Header.Set("User-Agent", userAgent)
 		if k := os.Getenv("NVD_API_KEY"); k != "" {
@@ -205,33 +235,35 @@ func nvdLookup(ctx context.Context, cpe string) ([]nvdCVE, error) {
 		}
 		resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 		if err != nil {
-			return nil, err
+			return nvdResult{}, fmt.Errorf("NVD request: %w", err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("NVD returned HTTP %d", resp.StatusCode)
+			return nvdResult{}, fmt.Errorf("NVD returned HTTP %d", resp.StatusCode)
 		}
 		body, err = io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 		if err != nil {
-			return nil, err
+			return nvdResult{}, fmt.Errorf("NVD body read: %w", err)
 		}
 	}
 	var parsed nvdResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("decode NVD response: %w", err)
+		return nvdResult{}, fmt.Errorf("decode NVD response: %w", err)
 	}
-	if c != nil {
+	if fresh && c != nil {
 		_ = c.Set(key, body, cveTTL)
 	}
 	cves := make([]nvdCVE, 0, len(parsed.Vulnerabilities))
 	for _, v := range parsed.Vulnerabilities {
 		cves = append(cves, v.CVE)
 	}
-	return cves, nil
+	return nvdResult{CVEs: cves, Total: parsed.TotalResults}, nil
 }
 
 // cveApplies reports whether any vulnerable cpeMatch of the CVE for the given
 // "<vendor>:<product>" covers version v. Uncomparable versions never match.
+// NVD config node "operator"/"children" nesting is not evaluated (AND is treated
+// as OR), which can over-match; the needs-validation caveat covers that.
 func cveApplies(c nvdCVE, cpe, v string) bool {
 	for _, cfg := range c.Configurations {
 		for _, n := range cfg.Nodes {
@@ -257,12 +289,18 @@ func matchApplies(m nvdCPEMatch, cpe, v string) bool {
 		if parts[5] == "*" || parts[5] == "-" {
 			return false
 		}
+		if componentCount(v) < componentCount(parts[5]) {
+			return false
+		}
 		c, ok := vercmp(v, parts[5])
 		return ok && c == 0
 	}
 	check := func(bound string, pred func(int) bool) bool {
 		if bound == "" {
 			return true
+		}
+		if componentCount(v) < componentCount(bound) {
+			return false
 		}
 		c, ok := vercmp(v, bound)
 		return ok && pred(c)
@@ -273,8 +311,13 @@ func matchApplies(m nvdCPEMatch, cpe, v string) bool {
 		check(m.VersionEndExcluding, func(c int) bool { return c < 0 })
 }
 
-// vercmp compares dotted-numeric versions. ok is false when either side is not
-// dotted-numeric; a non-numeric suffix on a component (8.2p1) is ignored.
+// componentCount returns the number of dot-separated parts in s.
+func componentCount(s string) int { return strings.Count(s, ".") + 1 }
+
+// vercmp compares dotted versions component-wise as (numeric prefix, suffix).
+// An empty suffix sorts before any non-empty one (1.1.1 < 1.1.1a); otherwise
+// suffixes compare lexically (k < w). ok is false when either side has an
+// empty or non-numeric-leading component.
 func vercmp(a, b string) (int, bool) {
 	pa, oka := versionParts(a)
 	pb, okb := versionParts(b)
@@ -282,27 +325,44 @@ func vercmp(a, b string) (int, bool) {
 		return 0, false
 	}
 	for len(pa) < len(pb) {
-		pa = append(pa, 0)
+		pa = append(pa, verPart{})
 	}
 	for len(pb) < len(pa) {
-		pb = append(pb, 0)
+		pb = append(pb, verPart{})
 	}
 	for i := range pa {
-		if pa[i] != pb[i] {
-			if pa[i] < pb[i] {
+		if pa[i].n != pb[i].n {
+			if pa[i].n < pb[i].n {
 				return -1, true
 			}
 			return 1, true
+		}
+		if pa[i].suffix != pb[i].suffix {
+			switch {
+			case pa[i].suffix == "":
+				return -1, true
+			case pb[i].suffix == "":
+				return 1, true
+			case pa[i].suffix < pb[i].suffix:
+				return -1, true
+			default:
+				return 1, true
+			}
 		}
 	}
 	return 0, true
 }
 
-func versionParts(v string) ([]int, bool) {
+type verPart struct {
+	n      int
+	suffix string
+}
+
+func versionParts(v string) ([]verPart, bool) {
 	if v == "" {
 		return nil, false
 	}
-	var out []int
+	var out []verPart
 	for _, s := range strings.Split(v, ".") {
 		i := 0
 		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
@@ -315,7 +375,7 @@ func versionParts(v string) ([]int, bool) {
 		if err != nil {
 			return nil, false
 		}
-		out = append(out, n)
+		out = append(out, verPart{n, s[i:]})
 	}
 	return out, true
 }

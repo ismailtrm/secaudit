@@ -20,7 +20,11 @@ func TestVercmp(t *testing.T) {
 		{"1.20.0", "1.18.0", 1, true},
 		{"1.20.0", "1.20.0", 0, true},
 		{"1.20", "1.20.0", 0, true},
-		{"8.2p1", "8.2", 0, true},
+		{"8.2p1", "8.2", 1, true},
+		{"1.0.2k", "1.0.2h", 1, true},
+		{"1.1.1", "1.1.1a", -1, true},
+		{"1.1.1w", "1.1.1k", 1, true},
+		{"beta", "1.0", 0, false},
 		{"8.2p1", "8.3", -1, true},
 		{"abc", "1.0", 0, false},
 		{"1.0", "", 0, false},
@@ -65,6 +69,11 @@ func TestCVEApplies(t *testing.T) {
 		{"other product", nvdCPEMatch{Vulnerable: true, Criteria: "cpe:2.3:a:f5:njs:*:*:*:*:*:*:*:*", VersionEndExcluding: "1.20.0"}, "1.18.0", false},
 		{"unparseable version", endEx, "weird", false},
 		{"unbounded wildcard", nvdCPEMatch{Vulnerable: true, Criteria: crit}, "1.18.0", false},
+		{"short version vs bound", nvdCPEMatch{Vulnerable: true, Criteria: crit, VersionEndExcluding: "2.4.52"}, "2.4", false},
+		{"short version vs exact", nvdCPEMatch{Vulnerable: true, Criteria: "cpe:2.3:a:f5:nginx:2.4.1:*:*:*:*:*:*:*"}, "2.4", false},
+		{"letter above end incl", nvdCPEMatch{Vulnerable: true, Criteria: crit, VersionEndIncluding: "1.0.2h"}, "1.0.2k", false},
+		{"letter below end incl", nvdCPEMatch{Vulnerable: true, Criteria: crit, VersionEndIncluding: "1.0.2h"}, "1.0.2c", true},
+		{"letter exact mismatch", nvdCPEMatch{Vulnerable: true, Criteria: "cpe:2.3:a:f5:nginx:1.1.1k:*:*:*:*:*:*:*"}, "1.1.1w", false},
 	}
 	for _, tc := range tests {
 		if got := cveApplies(cve(tc.m), "f5:nginx", tc.v); got != tc.want {
@@ -138,5 +147,23 @@ func TestCVECap(t *testing.T) {
 	fs := cveFindings(context.Background(), []struct{ Product, Version string }{{"nginx", "1.0"}})
 	if len(fs) != cveMaxOut+1 || fs[cveMaxOut].Title != "2 more lower-severity CVEs not shown" {
 		t.Fatalf("got %d findings, last %q", len(fs), fs[len(fs)-1].Title)
+	}
+}
+
+func TestCVETruncated(t *testing.T) {
+	body := strings.Replace(nvdFixture, `{"vulnerabilities"`, `{"totalResults":2500,"vulnerabilities"`, 1)
+	useNVD(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
+	fs := cveFindings(context.Background(), []struct{ Product, Version string }{{"nginx", "1.18.0"}})
+	var found bool
+	for _, f := range fs {
+		if f.Title == "CVE list incomplete for nginx" {
+			found = true
+			if f.Severity != SevInfo || f.Summary != "NVD lists 2500 CVEs; only the first 2000 were checked" {
+				t.Errorf("unexpected truncation finding: %+v", f)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("missing truncation finding: %+v", fs)
 	}
 }

@@ -45,7 +45,7 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 		})
 	}
 
-	var spfPresent, dmarcEnforced bool
+	var spfPresent, dmarcEnforced, dmarcKnown bool
 
 	// --- SPF (TXT on apex) ---
 	if spf, err := firstWithPrefix(ctx, t.Domain, "v=spf1"); err != nil {
@@ -62,7 +62,7 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 	// --- DMARC (TXT at _dmarc) ---
 	if dmarc, err := firstWithPrefix(ctx, "_dmarc."+t.Domain, "v=DMARC1"); err != nil {
 		inconclusive(CatEmail, "DMARC: lookup inconclusive", err)
-	} else if dmarc != "" {
+	} else if dmarcKnown = true; dmarc != "" {
 		switch strings.ToLower(tagValue(dmarc, "p")) {
 		case "reject", "quarantine":
 			dmarcEnforced = true
@@ -74,7 +74,7 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 			"no policy telling receivers how to handle spoofed mail", "no-dmarc", map[string]any{"domain": t.Domain})
 	}
 
-	if spfPresent && !dmarcEnforced {
+	if spfPresent && dmarcKnown && !dmarcEnforced {
 		findings = append(findings, Finding{
 			CheckerID: "dns.policy", Category: CatEmail, Severity: SevLow,
 			Title:   "SPF without enforced DMARC: From-header spoofing still possible",
