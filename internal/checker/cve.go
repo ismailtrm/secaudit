@@ -31,7 +31,8 @@ const (
 	cveCaveat = "This match is based on the version string only and is unconfirmed. " +
 		"Distributions often backport security fixes while keeping the upstream version number, " +
 		"so this may already be patched. External recon also cannot confirm that the vulnerable " +
-		"code path is reachable or unmitigated. Verify against the vendor advisory."
+		"code path is reachable or unmitigated. Verify against the vendor advisory. " +
+		"A high or critical CVSS is reported here at medium severity because the match is unconfirmed."
 )
 
 // cpeMap maps a lowercased banner product to its NVD "<vendor>:<product>" CPE
@@ -179,10 +180,16 @@ func cveFindings(ctx context.Context, pairs []struct{ Product, Version string })
 				Title: fmt.Sprintf("%d more lower-severity CVEs not shown", len(hits)-cveMaxOut)})
 			break
 		}
-		sev := cvssSeverity(h.score)
+		// Unconfirmed, version-string-only matches never exceed medium severity so
+		// CI severity gates don't fire on them; the real CVSS band stays in the summary.
+		band := cvssSeverity(h.score)
+		sev := band
+		if sev > SevMedium {
+			sev = SevMedium
+		}
 		out = append(out, Finding{CheckerID: "vuln.cve", Category: CatVuln, Severity: sev,
 			Title:    fmt.Sprintf("Possible CVE %s in %s %s", h.id, h.product, h.version),
-			Summary:  fmt.Sprintf("CVSS %.1f %s; needs validation", h.score, sev),
+			Summary:  fmt.Sprintf("CVSS %.1f %s; needs validation", h.score, band),
 			Detail:   cveCaveat,
 			Refs:     []string{"https://nvd.nist.gov/vuln/detail/" + h.id},
 			Evidence: map[string]any{"product": h.product, "version": h.version, "cve": h.id, "cvss": h.score}})

@@ -110,7 +110,7 @@ func TestCVEFindingsFromNVD(t *testing.T) {
 	if gotQuery != "cpe:2.3:a:f5:nginx" {
 		t.Errorf("query = %q", gotQuery)
 	}
-	if len(fs) != 1 || fs[0].Severity != SevCritical ||
+	if len(fs) != 1 || fs[0].Severity != SevMedium ||
 		fs[0].Title != "Possible CVE CVE-2099-0001 in nginx 1.18.0" ||
 		fs[0].Summary != "CVSS 9.8 CRITICAL; needs validation" || fs[0].Err != "" {
 		t.Fatalf("unexpected findings: %+v", fs)
