@@ -2,6 +2,7 @@ package checker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -32,53 +33,70 @@ func (dnsRecords) Run(ctx context.Context, t Target) ([]Finding, error) {
 	}
 
 	// A / AAAA live on the scanned host; MX / NS / SOA on the zone apex.
-	a := answerValues(ctx, t.Host, dns.TypeA)
-	aaaa := answerValues(ctx, t.Host, dns.TypeAAAA)
-	mx := answerValues(ctx, t.Domain, dns.TypeMX)
-	ns := answerValues(ctx, t.Domain, dns.TypeNS)
-	soa := answerValues(ctx, t.Domain, dns.TypeSOA)
+	a, aErr := answerValues(ctx, t.Host, dns.TypeA)
+	aaaa, aaaaErr := answerValues(ctx, t.Host, dns.TypeAAAA)
+	mx, mxErr := answerValues(ctx, t.Domain, dns.TypeMX)
+	ns, nsErr := answerValues(ctx, t.Domain, dns.TypeNS)
+	soa, soaErr := answerValues(ctx, t.Domain, dns.TypeSOA)
 
-	if len(a) == 0 && len(aaaa) == 0 {
-		add(SevMedium, "No A/AAAA records", t.Host+" does not resolve to any address",
-			map[string]any{"host": t.Host})
-	} else {
+	inconclusive := func(title string, err error) {
+		findings = append(findings, Finding{
+			CheckerID: "dns.records", Category: CatDNS, Severity: SevInfo,
+			Title: title, Summary: "DNS query failed (all resolvers + DoH) - could not determine",
+			Err: err.Error(),
+		})
+	}
+
+	if len(a) > 0 || len(aaaa) > 0 {
 		if len(a) > 0 {
 			add(SevInfo, "A records", strings.Join(a, ", "), map[string]any{"a": a})
 		}
 		if len(aaaa) > 0 {
 			add(SevInfo, "AAAA records", strings.Join(aaaa, ", "), map[string]any{"aaaa": aaaa})
-		} else {
+		} else if aaaaErr == nil {
 			add(SevInfo, "No IPv6 (AAAA)", "host has no AAAA record", map[string]any{"host": t.Host})
 		}
+	} else if aErr != nil || aaaaErr != nil {
+		inconclusive("A/AAAA: lookup inconclusive", errors.Join(aErr, aaaaErr))
+	} else {
+		add(SevMedium, "No A/AAAA records", t.Host+" does not resolve to any address",
+			map[string]any{"host": t.Host})
 	}
 
-	if len(mx) > 0 {
+	if mxErr != nil {
+		inconclusive("MX: lookup inconclusive", mxErr)
+	} else if len(mx) > 0 {
 		add(SevInfo, "Mail exchangers (MX)", strings.Join(mx, ", "), map[string]any{"mx": mx})
 	} else {
 		add(SevInfo, "No MX records", t.Domain+" is not configured to receive mail",
 			map[string]any{"domain": t.Domain})
 	}
 
-	if len(ns) > 0 {
+	if nsErr != nil {
+		inconclusive("NS: lookup inconclusive", nsErr)
+	} else if len(ns) > 0 {
 		add(SevInfo, "Nameservers (NS)", strings.Join(ns, ", "), map[string]any{"ns": ns})
 	} else {
 		add(SevMedium, "No NS records", "could not determine authoritative nameservers",
 			map[string]any{"domain": t.Domain})
 	}
 
-	if len(soa) > 0 {
+	if soaErr != nil {
+		inconclusive("SOA: lookup inconclusive", soaErr)
+	} else if len(soa) > 0 {
 		add(SevInfo, "SOA", soa[0], map[string]any{"soa": soa[0]})
 	}
 
 	return findings, nil
 }
 
-// answerValues queries one record type and returns human-readable values,
-// swallowing transport errors (best-effort, per-type).
-func answerValues(ctx context.Context, name string, qtype uint16) []string {
+// answerValues queries one record type and returns human-readable values. A
+// lookup failure is returned as an error so callers can tell it apart from a
+// genuinely empty answer.
+func answerValues(ctx context.Context, name string, qtype uint16) ([]string, error) {
 	rrs, err := queryDNS(ctx, name, qtype)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var out []string
 	for _, rr := range rrs {
@@ -101,5 +119,5 @@ func answerValues(ctx context.Context, name string, qtype uint16) []string {
 			out = append(out, strings.TrimSuffix(v.Ns, ".")+" (serial "+strconv.FormatUint(uint64(v.Serial), 10)+")")
 		}
 	}
-	return out
+	return out, nil
 }

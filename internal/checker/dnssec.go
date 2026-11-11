@@ -2,6 +2,7 @@ package checker
 
 import (
 	"context"
+	"errors"
 
 	"github.com/miekg/dns"
 )
@@ -25,15 +26,21 @@ func (dnssecCheck) Run(ctx context.Context, t Target) ([]Finding, error) {
 			Title: title, Summary: summary}}
 	}
 
-	dsRRs, _ := queryDNS(ctx, t.Domain, dns.TypeDS)
+	dsRRs, dsErr := queryDNS(ctx, t.Domain, dns.TypeDS)
 	hasDS := hasRRType(dsRRs, dns.TypeDS)
 
-	keyRRs, _ := queryDNS(ctx, t.Domain, dns.TypeDNSKEY)
+	keyRRs, keyErr := queryDNS(ctx, t.Domain, dns.TypeDNSKEY)
 	hasKey := hasRRType(keyRRs, dns.TypeDNSKEY)
 
-	soaRRs, _ := queryWithDNSSEC(ctx, t.Domain, dns.TypeSOA)
+	soaRRs, sigErr := queryWithDNSSEC(ctx, t.Domain, dns.TypeSOA)
 	hasSig := hasRRType(soaRRs, dns.TypeRRSIG)
 	signed := hasKey && hasSig
+
+	if dsErr != nil || keyErr != nil || sigErr != nil {
+		f := one(SevInfo, "DNSSEC: lookup inconclusive", "DNS query failed - could not determine")
+		f[0].Err = errors.Join(dsErr, keyErr, sigErr).Error()
+		return f, nil
+	}
 
 	switch {
 	case signed && hasDS:

@@ -29,8 +29,18 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 		})
 	}
 
+	inconclusive := func(cat Category, title string, err error) {
+		findings = append(findings, Finding{
+			CheckerID: "dns.policy", Category: cat, Severity: SevInfo,
+			Title: title, Summary: "DNS query failed (all resolvers + DoH) - could not determine",
+			Err: err.Error(),
+		})
+	}
+
 	// --- SPF (TXT on apex) ---
-	if spf := firstWithPrefix(ctx, t.Domain, "v=spf1"); spf != "" {
+	if spf, err := firstWithPrefix(ctx, t.Domain, "v=spf1"); err != nil {
+		inconclusive(CatEmail, "SPF: lookup inconclusive", err)
+	} else if spf != "" {
 		sev, note := spfQuality(spf)
 		add(CatEmail, sev, "SPF record", note, map[string]any{"spf": spf})
 	} else {
@@ -39,7 +49,9 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 	}
 
 	// --- DMARC (TXT at _dmarc) ---
-	if dmarc := firstWithPrefix(ctx, "_dmarc."+t.Domain, "v=DMARC1"); dmarc != "" {
+	if dmarc, err := firstWithPrefix(ctx, "_dmarc."+t.Domain, "v=DMARC1"); err != nil {
+		inconclusive(CatEmail, "DMARC: lookup inconclusive", err)
+	} else if dmarc != "" {
 		sev, note := dmarcQuality(dmarc)
 		add(CatEmail, sev, "DMARC record", note, map[string]any{"dmarc": dmarc})
 	} else {
@@ -48,7 +60,9 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 	}
 
 	// --- CAA (apex) ---
-	if caa := caaIssuers(ctx, t.Domain); len(caa) > 0 {
+	if caa, err := caaIssuers(ctx, t.Domain); err != nil {
+		inconclusive(CatTLS, "CAA: lookup inconclusive", err)
+	} else if len(caa) > 0 {
 		add(CatTLS, SevInfo, "CAA record", strings.Join(caa, ", "), map[string]any{"caa": caa})
 	} else {
 		add(CatTLS, SevLow, "No CAA record",
@@ -56,14 +70,18 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 	}
 
 	// --- MTA-STS (TXT at _mta-sts) ---
-	if sts := firstWithPrefix(ctx, "_mta-sts."+t.Domain, "v=STSv1"); sts != "" {
+	if sts, err := firstWithPrefix(ctx, "_mta-sts."+t.Domain, "v=STSv1"); err != nil {
+		inconclusive(CatEmail, "MTA-STS: lookup inconclusive", err)
+	} else if sts != "" {
 		add(CatEmail, SevInfo, "MTA-STS enabled", sts, map[string]any{"mta_sts": sts})
 	} else {
 		add(CatEmail, SevInfo, "No MTA-STS", "SMTP TLS not enforced via MTA-STS", nil)
 	}
 
 	// --- TLS-RPT (TXT at _smtp._tls) ---
-	if rpt := firstWithPrefix(ctx, "_smtp._tls."+t.Domain, "v=TLSRPTv1"); rpt != "" {
+	if rpt, err := firstWithPrefix(ctx, "_smtp._tls."+t.Domain, "v=TLSRPTv1"); err != nil {
+		inconclusive(CatEmail, "TLS-RPT: lookup inconclusive", err)
+	} else if rpt != "" {
 		add(CatEmail, SevInfo, "TLS-RPT enabled", rpt, map[string]any{"tls_rpt": rpt})
 	}
 
@@ -71,17 +89,17 @@ func (dnsPolicy) Run(ctx context.Context, t Target) ([]Finding, error) {
 }
 
 // firstWithPrefix returns the first TXT record at name beginning with prefix.
-func firstWithPrefix(ctx context.Context, name, prefix string) string {
+func firstWithPrefix(ctx context.Context, name, prefix string) (string, error) {
 	txts, err := txtRecords(ctx, name)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	for _, txt := range txts {
 		if strings.HasPrefix(strings.ToLower(txt), strings.ToLower(prefix)) {
-			return txt
+			return txt, nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
 // spfQuality rates an SPF record by its terminating "all" mechanism.
@@ -128,10 +146,10 @@ func tagValue(record, tag string) string {
 }
 
 // caaIssuers returns the "issue"/"issuewild" CA values from CAA records.
-func caaIssuers(ctx context.Context, name string) []string {
+func caaIssuers(ctx context.Context, name string) ([]string, error) {
 	rrs, err := queryDNS(ctx, name, dns.TypeCAA)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var out []string
 	for _, rr := range rrs {
@@ -139,5 +157,5 @@ func caaIssuers(ctx context.Context, name string) []string {
 			out = append(out, c.Tag+":"+c.Value)
 		}
 	}
-	return out
+	return out, nil
 }
