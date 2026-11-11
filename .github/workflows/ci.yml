@@ -27,7 +27,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          # Install the latest 1.26 patch on every run (not the exact patch
+          # pinned in go.mod) so govulncheck always sees an up-to-date stdlib.
+          # go-version-file would install go.mod's exact patch, which goes
+          # stale: the next stdlib advisory lands a patch ahead and CI goes red
+          # until someone bumps go.mod by hand. go.mod's `go` line stays a floor.
+          go-version: "1.26.x"
+          check-latest: true
           cache: true
 
       - name: Build
