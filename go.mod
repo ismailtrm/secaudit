@@ -1,6 +1,6 @@
 module github.com/ismailtrm/secaudit
 
-go 1.26.5
+go 1.26.11
 
 require (
 	charm.land/bubbles/v2 v2.1.0
