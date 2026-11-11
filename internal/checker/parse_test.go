@@ -16,10 +16,11 @@ func TestNewTarget(t *testing.T) {
 		{"https://www.example.com/path", "example.com", "www.example.com", false},
 		{"http://sub.example.co.uk", "example.co.uk", "sub.example.co.uk", false},
 		{"  example.com  ", "example.com", "example.com", false},
-		{"1.2.3.4", "", "", true},                                       // IPs rejected
-		{"", "", "", true},                                              // empty rejected
-		{"-oG.example.com", "", "", true},                               // leading-hyphen host rejected (arg-injection guard)
-		{"münchen.de", "xn--mnchen-3ya.de", "xn--mnchen-3ya.de", false}, // IDN → punycode
+		{"1.2.3.4", "", "", true},         // IPs rejected
+		{"", "", "", true},                // empty rejected
+		{"-oG.example.com", "", "", true}, // leading-hyphen host rejected (arg-injection guard)
+		// münchen.de: IDN → punycode
+		{"münchen.de", "xn--mnchen-3ya.de", "xn--mnchen-3ya.de", false},
 	}
 	for _, tc := range tests {
 		got, err := NewTarget(tc.raw, Own)
